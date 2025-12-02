@@ -1,0 +1,48 @@
+# Build directories
+/build/
+/my_project/build/
+**/CMakeFiles/
+**/CMakeCache.txt
+**/cmake_install.cmake
+**/Makefile
+**/install_manifest.txt
+**/compile_commands.json
+**/Testing/
+
+# Compiled objects and libraries
+*.o
+*.obj
+*.lo
+*.la
+*.a
+*.so
+*.dylib
+*.dll
+*.lib
+*.exe
+
+# Qt generated sources
+moc_*.cpp
+*.moc
+ui_*.h
+qrc_*.cpp
+
+# Qt/CMake user settings
+*.pro.user*
+*.qbs.user*
+*.user
+.qmake.stash
+.cache/
+
+# IDE/project settings
+.DS_Store
+.idea/
+.vscode/
+
+# Logs and runtime artifacts
+*.log
+my_project/resources/logs/
+
+# External/optional components
+librealsense/
+index-tts-vllm.local-backup/

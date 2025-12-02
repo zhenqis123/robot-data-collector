@@ -1,0 +1,183 @@
+#include "ConfigManager.h"
+
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+
+#include "Logger.h"
+#include <filesystem>
+
+ConfigManager::ConfigManager(Logger &logger)
+    : _logger(logger)
+{
+}
+
+bool ConfigManager::load(const std::string &path)
+{
+    QFile file(QString::fromStdString(path));
+    if (!file.open(QIODevice::ReadOnly))
+    {
+        _logger.error("Failed to open config file: %s", path.c_str());
+        return false;
+    }
+
+    const auto data = file.readAll();
+    const auto doc = QJsonDocument::fromJson(data);
+    if (doc.isNull())
+    {
+        _logger.error("Invalid JSON in config file");
+        return false;
+    }
+
+    _path = path;
+    _cameraConfigs.clear();
+    _arucoTargets.clear();
+    _vlmConfig = {};
+    _audioConfig = {};
+
+    const auto cameras = doc.object().value("cameras").toArray();
+    for (const auto &entry : cameras)
+    {
+        const auto obj = entry.toObject();
+        CameraConfig config;
+        config.type = obj.value("type").toString().toStdString();
+        config.id = obj.value("id").toInt();
+        config.serial = obj.value("serial").toString().toStdString();
+        config.endpoint = obj.value("endpoint").toString().toStdString();
+        const auto resolution = obj.value("resolution").toString().toStdString();
+        const auto [width, height] = parseResolution(resolution);
+        const int fps = obj.value("frame_rate").toInt();
+        auto streamFromObject = [&](const QJsonObject &streamObj,
+                                    const std::pair<int, int> &fallbackRes,
+                                    int fallbackFps) {
+            CameraConfig::StreamConfig stream;
+            stream.width = fallbackRes.first;
+            stream.height = fallbackRes.second;
+            stream.frameRate = fallbackFps;
+            if (!streamObj.isEmpty())
+            {
+                const auto resStr = streamObj.value("resolution").toString().toStdString();
+                if (!resStr.empty())
+                {
+                    const auto pair = parseResolution(resStr);
+                    if (pair.first > 0)
+                        stream.width = pair.first;
+                    if (pair.second > 0)
+                        stream.height = pair.second;
+                }
+                if (streamObj.contains("frame_rate"))
+                    stream.frameRate = streamObj.value("frame_rate").toInt(stream.frameRate);
+            }
+            return stream;
+        };
+
+        config.color = streamFromObject(obj.value("color").toObject(), {width, height}, fps);
+        config.depth = streamFromObject(obj.value("depth").toObject(), {width, height}, fps);
+        config.width = config.color.width > 0 ? config.color.width : width;
+        config.height = config.color.height > 0 ? config.color.height : height;
+        config.frameRate = config.color.frameRate > 0 ? config.color.frameRate : fps;
+        _cameraConfigs.push_back(config);
+    }
+
+    _logger.info("Loaded %zu camera configuration entries", _cameraConfigs.size());
+
+    const auto aru = doc.object().value("aruco_targets").toArray();
+    for (const auto &entry : aru)
+    {
+        const auto obj = entry.toObject();
+        ArucoTarget target;
+        target.dictionary = obj.value("dictionary").toString().toStdString();
+        auto idsArray = obj.value("marker_ids").toArray();
+        for (const auto &idVal : idsArray)
+            target.markerIds.push_back(idVal.toInt());
+        if (!target.dictionary.empty())
+            _arucoTargets.push_back(std::move(target));
+    }
+
+    // tasks_path
+    {
+        std::filesystem::path configPath(_path);
+        auto configDir = configPath.parent_path();
+        auto tasksPath = doc.object().value("tasks_path").toString().toStdString();
+        if (tasksPath.empty())
+            tasksPath = "resources/tasks";
+        std::filesystem::path candidate(tasksPath);
+        if (candidate.is_relative())
+            candidate = configDir / candidate;
+        _tasksRoot = candidate.lexically_normal().string();
+        _logger.info("Tasks root set to: %s", _tasksRoot.c_str());
+    }
+
+    // vlm config
+    {
+        std::filesystem::path configPath(_path);
+        auto configDir = configPath.parent_path();
+        const auto vlmObj = doc.object().value("vlm").toObject();
+        _vlmConfig.model = vlmObj.value("model").toString("gemini-2.5-flash").toStdString();
+        _vlmConfig.endpoint = vlmObj.value("endpoint")
+                                   .toString("https://api.gptoai.top/v1/chat/completions")
+                                   .toStdString();
+        std::string defaultPrompt = (configDir / "prompts/vlm_task_prompt.txt").string();
+        _vlmConfig.promptPath = vlmObj.value("prompt_path")
+                                    .toString(QString::fromStdString(defaultPrompt))
+                                    .toStdString();
+        _vlmConfig.apiKey = vlmObj.value("api_key").toString().toStdString();
+    }
+
+    // audio prompts
+    {
+        const auto audioObj = doc.object().value("audio_prompts").toObject();
+        _audioConfig.enabled = audioObj.value("enabled").toBool(false);
+        _audioConfig.volume = static_cast<float>(audioObj.value("volume").toDouble(1.0));
+        _audioConfig.mode = "index_tts";
+        const auto indexObj = audioObj.value("index_tts").toObject();
+        _audioConfig.indexTts.endpoint = indexObj.value("endpoint").toString().toStdString();
+        const auto refs = indexObj.value("audio_paths").toArray();
+        for (const auto &r : refs)
+            _audioConfig.indexTts.audioPaths.push_back(r.toString().toStdString());
+        const auto textsObj = audioObj.value("texts").toObject();
+        for (auto it = textsObj.begin(); it != textsObj.end(); ++it)
+            _audioConfig.texts[it.key().toStdString()] = it.value().toString().toStdString();
+        const auto keysObj = audioObj.value("keybindings").toObject();
+        for (auto it = keysObj.begin(); it != keysObj.end(); ++it)
+            _audioConfig.keybindings[it.key().toStdString()] = it.value().toString().toStdString();
+    }
+
+    return true;
+}
+
+std::optional<CameraConfig> ConfigManager::getCameraConfigById(int id) const
+{
+    for (const auto &cfg : _cameraConfigs)
+    {
+        if (cfg.id == id)
+            return cfg;
+    }
+    return std::nullopt;
+}
+
+std::pair<int, int> ConfigManager::parseResolution(const std::string &value)
+{
+    auto pos = value.find('x');
+    if (pos == std::string::npos)
+        return {0, 0};
+    const auto width = std::stoi(value.substr(0, pos));
+    const auto height = std::stoi(value.substr(pos + 1));
+    return {width, height};
+}
+
+bool ConfigManager::updateCameraConfig(int id, const CameraConfig &config)
+{
+    for (auto &cfg : _cameraConfigs)
+    {
+        if (cfg.id == id)
+        {
+            cfg = config;
+            _logger.info("Updated camera %d configuration", id);
+            return true;
+        }
+    }
+    _logger.warn("Camera %d configuration not found", id);
+    return false;
+}

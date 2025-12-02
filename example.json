@@ -1,0 +1,371 @@
+{
+  "version": "0.1",
+  // 一个 session 里可以包含多个 episode（连续采集多次任务）
+  "session_id": "sess_20251122_001",
+  // 一次完整任务执行 episode 的唯一 ID（可以是 session_id + 递增编号）
+  "episode_id": "sess_20251122_001_ep_0001",
+  // 采集员 ID，用于质量评估、分 worker 训练等
+  "worker_id": "worker_07",
+
+  "capture_start_time_utc": "2025-11-22T10:15:30Z",
+
+  "hardware": {
+    "cameras": [
+      {
+        "camera_id": "realsense_xxx",
+        "description": "Head-mounted egocentric camera",
+        "resolution": [1920, 1080],
+        "fps": 30,
+        "intrinsics": {}
+      },
+      {
+        "camera_id": "rgb_xxx",
+        "description": "Side view reference camera",
+        "resolution": [1920, 1080],
+        "fps": 30,
+        "intrinsics": {}
+      }
+    ],
+
+    "buttons": [
+      {
+        "button_id": "button_start_end",  // 开始/结束 任务按钮
+        "device_id": "device_buttons_01",
+        "physical_label": "left",
+        "semantic_role": "task_start_end"
+      },
+      {
+        "button_id": "button_step_done",  // 子任务完成按钮
+        "device_id": "device_buttons_01",
+        "physical_label": "middle",
+        "semantic_role": "step_finished"
+      },
+      {
+        "button_id": "button_skip_repeat",  // 出错/重复/跳过 按钮
+        "device_id": "device_buttons_01",
+        "physical_label": "right",
+        "semantic_role": "mark_skip_or_repeat"
+      }
+    ],
+
+    "audio_devices": [
+      {
+        "audio_id": "mic_head",
+        "description": "Microphone attached to the head-mounted camera"
+      }
+    ]
+  },
+
+  // === 2. VLM 生成：看图 -> 识别物体 -> 生成任务 & 子任务 ===
+  "vlm_generation": {
+    // 使用的 VLM 模型名字（方便重现、对比）
+    "model_name": "Example-VLM-8B",
+
+    // 使用哪一个摄像头的哪一帧作为输入
+    "used_camera_id": "realsense_xxx",
+    "input_frame_index": 150,
+    "input_frame_timestamp": 3.0,
+    "input_frame_path": "frames/sess_20251122_001/realsense_xxx/frame_000150.jpg",
+
+    "prompt": "You see a single egocentric image from a kitchen counter. 1) Briefly summarize the scene in English. 2) List 2-5 manipulable objects you see (id, short name, category). 3) Propose ONE simple, safe, feasible manipulation task that can be done with these objects. 4) Decompose this task into 2-5 very small steps. 5) Each step_description must be short English, describing only ONE key action. 6) Output ONLY valid JSON with keys: scene_summary, objects, task.",
+
+    "output": {
+      "scene_summary": "A kitchen counter with a blue mug, a transparent water bottle, and a white plate.",
+      "objects": [
+        {
+          "object_id": "obj_1",
+          "name": "blue mug",
+          "category": "cup"
+        },
+        {
+          "object_id": "obj_2",
+          "name": "transparent water bottle",
+          "category": "bottle"
+        },
+        {
+          "object_id": "obj_3",
+          "name": "white plate",
+          "category": "plate"
+        }
+      ],
+      "task": {
+        "task_template_id": "pour_water_001",
+        "task_description": "Pour water from the bottle into the blue mug.",
+        "steps": [
+          {
+            "step_id": 1,
+            "step_description": "Pick up the water bottle.",
+            "action_type": "grasp",
+            "involved_objects": [
+              {
+                "object_id": "obj_2",
+                "role": "manipulated" 
+                // role：用来描述该物体在这一动作中的语义角色，
+                // 例如 "manipulated" (被操作对象), "tool" (工具),
+                // "source" (源，如水瓶), "target" (目标，如杯子),
+                // "support" (支撑面) 等。
+                // 提供更丰富的affordance记录信息。
+              }
+            ]
+          },
+          {
+            "step_id": 2,
+            "step_description": "Pick up the blue mug.",
+            "action_type": "grasp",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "step_id": 3,
+            "step_description": "Pour water from the bottle into the mug.",
+            "action_type": "pour",
+            "involved_objects": [
+              {
+                "object_id": "obj_2",
+                "role": "source"
+              },
+              {
+                "object_id": "obj_1",
+                "role": "target"
+              }
+            ]
+          }
+        ]
+      }
+    },
+
+    "generated_at_utc": "2025-11-22T10:15:00Z"
+  },
+
+  "scene": {
+    "scene_id": "kitchen_counter_top_01",
+
+    "scene_caption": "A kitchen counter with a blue mug, a transparent water bottle, and a white plate.",
+    
+    "initial_camera_id": "realsense_xxx",
+    "initial_frame_index": 150,
+    "initial_frame_timestamp": 3.0,
+
+    // 将 VLM 输出的 objects 再记录一遍，并且可以补充初始 bbox/marker 等，方便后续补充标注参考
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "blue mug",
+        "category": "cup",
+        "bbox_xywh": [620, 400, 120, 180],  // 在 initial_frame 上的 bounding box（像素）
+        "marker_id": "blue_sticker_1"       // 如果贴了标签，可以写标签 ID，否则为 null
+      },
+      {
+        "object_id": "obj_2",
+        "name": "transparent water bottle",
+        "category": "bottle",
+        "bbox_xywh": [900, 380, 110, 260],
+        "marker_id": "green_sticker_2"
+      },
+      {
+        "object_id": "obj_3",
+        "name": "white plate",
+        "category": "plate",
+        "bbox_xywh": [700, 520, 160, 60],
+        "marker_id": null
+      }
+    ]
+  },
+
+  // === 4. 本次 episode 实际执行的任务信息 ===
+  "task": {
+    "task_instance_id": "sess_20251122_001_ep_0001",
+    // 指向 VLM / 模板中定义的 task_template_id，方便聚合同类任务
+    "task_template_id": "pour_water_001",
+    "task_description": "Pour water from the bottle into the blue mug.",
+    "task_category": "tabletop_manipulation",
+
+    // 整个任务在视频中的起止时间（秒）
+    // 一般根据 button_start_end 的按钮事件来确定
+    "task_start_time": 5.0,
+    "task_end_time": 32.0,
+
+    // 在主相机里的起止帧 index（便于快速切片）
+    "task_start_frame": 300,
+    "task_end_frame": 1920
+  },
+
+  // === 5. step-level 执行信息 ===
+  "steps": [
+    {
+      "step_id": 1,
+      "step_description": "Pick up the water bottle.",
+
+      // 动作类别（可选字段）：例如 grasp / pour / open / close / place / push / pull 等
+      "action_type": "grasp",
+
+      // 该步涉及的物体及其角色
+      "involved_objects": [
+        {
+          "object_id": "obj_2",
+          "role": "manipulated"
+        }
+      ],
+
+      // 可选：先验条件，用自然语言描述，方便未来做规划/推理
+      "preconditions": [
+        "The water bottle is resting on the counter."
+      ],
+
+      // 可选：成功条件，便于未来做自动成功判定或 reward shaping
+      "success_conditions": [
+        "The water bottle is firmly held in one hand."
+      ],
+
+      // 一步可能有多次尝试（if 中途按了 error button）
+      "attempts": [
+        {
+          "attempt_index": 1,
+
+          // 这一 attempt 的起止时间（秒），通常 = TTS 播放开始 ~ step_done 按钮时间
+          "start_time": 6.0,
+          "end_time": 10.5,
+
+          // 对应主相机的起止帧 index
+          "start_frame": 360,
+          "end_frame": 630,
+
+          // reward：这次 attempt 的回报，目前定为 0.0 或 1.0，
+          // 将来可以扩展为 [0,1] 或更细粒度。
+          "reward": 1.0,
+
+          // notes：采集员额外补充解释特殊情况的一两句语音（可选）
+          // audio_path：存放这段语音的音频切片路径
+          // audio_texts：ASR 之后的文本
+          // audio_time：这段语音在视频时间轴上的起点
+          // 如果整段为 null 或 audio_path 为 null，表示没有额外语音说明。
+          "notes": {
+            "audio_path": null,
+            "audio_texts": [],
+            "audio_time": null
+          }
+        }
+      ]
+    },
+
+    {
+      "step_id": 2,
+      "step_description": "Pick up the blue mug.",
+      "action_type": "grasp",
+      "involved_objects": [
+        {
+          "object_id": "obj_1",
+          "role": "manipulated"
+        }
+      ],
+      "preconditions": [
+        "The blue mug is standing on the counter."
+      ],
+      "success_conditions": [
+        "The blue mug is firmly held in one hand."
+      ],
+      "attempts": [
+        {
+          "attempt_index": 1,
+          "start_time": 11.0,
+          "end_time": 15.0,
+          "start_frame": 660,
+          "end_frame": 900,
+
+          // 第一次尝试失败：例如 worker 自己按了 error 按钮
+          "reward": 0.0,
+
+          "notes": {
+            "audio_path": "audio/sess_20251122_001_ep_0001_step2_attempt1_comment.wav",
+            "audio_texts": [
+              "I picked the wrong cup."
+            ],
+            "audio_time": 14.0
+          }
+        },
+        {
+          "attempt_index": 2,
+          "start_time": 16.0,
+          "end_time": 20.0,
+          "start_frame": 960,
+          "end_frame": 1200,
+          "reward": 1.0,
+          "notes": {
+            "audio_path": null,
+            "audio_texts": [],
+            "audio_time": null
+          }
+        }
+      ]
+    },
+
+    {
+      "step_id": 3,
+      "step_description": "Pour water from the bottle into the mug.",
+      "action_type": "pour",
+      "involved_objects": [
+        {
+          "object_id": "obj_2",
+          "role": "source"
+        },
+        {
+          "object_id": "obj_1",
+          "role": "target"
+        }
+      ],
+      "preconditions": [
+        "The bottle is held above the mug."
+      ],
+      "success_conditions": [
+        "There is visibly more water inside the mug."
+      ],
+      "attempts": [
+        {
+          "attempt_index": 1,
+          "start_time": 21.0,
+          "end_time": 27.5,
+          "start_frame": 1260,
+          "end_frame": 1650,
+          "reward": 1.0,
+          "notes": {
+            "audio_path": null,
+            "audio_texts": [],
+            "audio_time": null
+          }
+        }
+      ]
+    }
+  ],
+
+  // === 6. 原始事件流（button / TTS / 其他原始信号），便于复查处理一些错误标注 ===
+  "raw_events": [
+    { "time": 5.0, "event_type": "button_down", "button_id": "button_start_end" },
+    { "time": 6.0, "event_type": "tts_play_start", "step_id": 1, "tts_id": "tts_step1" },
+    { "time": 6.8, "event_type": "tts_play_end", "step_id": 1, "tts_id": "tts_step1" },
+    { "time": 10.5, "event_type": "button_down", "button_id": "button_step_done", "step_id": 1 },
+    { "time": 11.0, "event_type": "tts_play_start", "step_id": 2, "tts_id": "tts_step2" },
+    { "time": 11.7, "event_type": "tts_play_end", "step_id": 2, "tts_id": "tts_step2" },
+    { "time": 15.0, "event_type": "button_down", "button_id": "button_error", "step_id": 2 },
+    { "time": 16.0, "event_type": "tts_play_start", "step_id": 2, "tts_id": "tts_step2_repeat" },
+    { "time": 16.7, "event_type": "tts_play_end", "step_id": 2, "tts_id": "tts_step2_repeat" },
+    { "time": 20.0, "event_type": "button_down", "button_id": "button_step_done", "step_id": 2 },
+    { "time": 21.0, "event_type": "tts_play_start", "step_id": 3, "tts_id": "tts_step3" },
+    { "time": 21.9, "event_type": "tts_play_end", "step_id": 3, "tts_id": "tts_step3" },
+    { "time": 27.5, "event_type": "button_down", "button_id": "button_step_done", "step_id": 3 },
+    { "time": 32.0, "event_type": "button_down", "button_id": "button_start_end" }
+  ],
+
+  // === 7. episode 质量统计（用于采集 QA / worker 评分）===
+  "episode_quality": {
+    "num_steps": 3,
+    "num_attempts": 4,
+    "num_errors": 1,         // 总共按过几次 error button
+    "has_timeout": false,    // 是否发生过长时间无响应的超时（可由后台逻辑来判断）
+    "worker_reliability_score": 0.92,  // 来自跨 episode 的统计
+    "comments": ""
+  }
+}

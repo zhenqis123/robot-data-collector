@@ -1,0 +1,4 @@
+[submodule "index-tts-vllm"]
+	path = index-tts-vllm
+	url = https://github.com/Ksuriuri/index-tts-vllm.git
+	ignore = untracked
