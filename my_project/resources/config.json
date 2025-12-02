@@ -1,0 +1,90 @@
+{
+  "tasks_path": "tasks",
+  "vlm": {
+    "model": "qwen3-vl-plus",
+    "endpoint": "https://api.probex.top/v1/chat/completions",
+    "prompt_path": "resources/prompts/vlm_task_prompt.txt",
+    "api_key": "sk-1u7FEqKrBByo2DuR0EijZg9dhWS8CKWFjV6Etp5AsjhsVkQ7"
+  },
+  "audio_prompts": {
+    "enabled": true,
+    "mode": "IndexTTS",
+    "volume": 100,
+    "piper": {
+      "voice_onnx": "/home/xiziheng/develop/data_collector/my_project/resources/voice/en_US-amy-medium.onnx",
+      "voice_config": "/home/xiziheng/develop/data_collector/my_project/resources/voice/en_US-amy-medium.onnx.json",
+      "voice_onnx_cn": "/home/xiziheng/develop/data_collector/my_project/resources/voice/zh_CN-huayan-medium.onnx",
+      "voice_config_cn": "/home/xiziheng/develop/data_collector/my_project/resources/voice/zh_CN-huayan-medium.onnx.json",
+      "espeak_data": "/home/xiziheng/develop/data_collector/piper1-gpl/libpiper/install/espeak-ng-data",
+      "sample_rate": 22050
+    },
+    "index_tts": {
+      "endpoint": "http://127.0.0.1:6006/tts_url",
+      "audio_paths": ["/home/xiziheng/develop/data_collector/index-tts-vllm/assets/jay_promptvn.wav"]
+    },
+    "texts": {
+      "start": "Recording started. Task {task_id}. Step {step_id}: {step_desc}.",
+      "next_step": "Next step {step_id}: {step_desc}.",
+      "complete": "Task completed.",
+      "abort": "Task aborted.",
+      "error": "Error noted.",
+      "skip": "Skip current step.",
+      "retry": "Retry current step.",
+      "stop_running": "Recording stopped. Task interrupted.",
+      "stop_completed": "Recording stopped. Task completed.",
+      "vlm_success": "Task generated successfully.",
+      "vlm_fail": "Task generation failed. Please retry."
+    },
+    "keybindings": {
+      "advance": "S",
+      "retry": "R",
+      "skip": "K",
+      "error": "E",
+      "abort": "A"
+    }
+  },
+  "cameras": [
+    {
+      "type": "RealSense",
+      "id": 0,
+      "color": {
+        "resolution": "1280x720",
+        "frame_rate": 30
+      },
+      "depth": {
+        "resolution": "1280x720",
+        "frame_rate": 30
+      }
+    },
+    {
+      "type": "RealSense",
+      "id": 1,
+      "color": {
+        "resolution": "1280x720",
+        "frame_rate": 30
+      },
+      "depth": {
+        "resolution": "1280x720",
+        "frame_rate": 30
+      }
+    },
+    {
+      "type": "RealSense",
+      "id": 2,
+      "color": {
+        "resolution": "1280x720",
+        "frame_rate": 30
+      },
+      "depth": {
+        "resolution": "1280x720",
+        "frame_rate": 30
+      }
+    }
+  ],
+  "aruco_targets": [
+    {
+      "dictionary": "DICT_6X6_100",
+      "marker_ids": [0, 1, 2, 3]
+    }
+  ]
+}
