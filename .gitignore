@@ -46,3 +46,5 @@ my_project/resources/logs/
 # External/optional components
 librealsense/
 index-tts-vllm.local-backup/
+todo.md
+AGENTS.md
