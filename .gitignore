@@ -48,3 +48,4 @@ librealsense/
 index-tts-vllm.local-backup/
 todo.md
 AGENTS.md
+*.wav
