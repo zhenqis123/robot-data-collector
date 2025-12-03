@@ -11,7 +11,7 @@
 
 ## 环境与依赖（Ubuntu 示例）
 
-运行前建议在 Ubuntu 上安装以下依赖：
+运行前在 Ubuntu 上安装以下依赖：
 
 - Qt5 Widgets/Core/Multimedia
 - OpenCV
@@ -39,6 +39,7 @@ sudo apt install librealsense2-utils librealsense2-dev librealsense2-dbg
 
 ## 获取代码与子模块
 
+如果不需要在本地运行tts服务，可以不初始化indetts子模块，访问我这边4090主机的tts服务就可以。ip是192.168.20.173。需要在config.json中修改endpoint为这个地址，然后将audio_paths设置为项目根目录下的jay_promptvn.wav文件路径或者其他示例音频文件路径。
 ```bash
 git clone https://github.com/zhenqis123/robot-data-collector.git
 cd robot-data-collector
@@ -57,7 +58,7 @@ cmake --build my_project/build -j
 ./my_project/build/DataCollectorApp
 ```
 
-如果需要一键重新构建 Release 版本，可在仓库根目录运行：
+如果需要一键重新构建 Release 版本，在仓库根目录运行：
 
 ```bash
 ./build_release.sh
@@ -68,6 +69,8 @@ cmake --build my_project/build -j
 更多关于设备配置、数据流和扩展方式，参见 `my_project/README.md` 与 `my_project/docs`。
 
 ## IndexTTS 子模块与权重
+
+如果不需要在本地运行tts服务，可以跳过本节。
 
 本仓库使用 IndexTTS 作为语音提示引擎，对应子模块位于 `index-tts-vllm/`。
 

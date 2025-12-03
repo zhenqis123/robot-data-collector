@@ -50,3 +50,4 @@ index-tts-vllm.local-backup/
 todo.md
 AGENTS.md
 *.wav
+!jay_promptvn.wav
