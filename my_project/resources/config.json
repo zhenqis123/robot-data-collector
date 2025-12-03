@@ -48,36 +48,36 @@
       "type": "RealSense",
       "id": 0,
       "color": {
-        "resolution": "1280x720",
-        "frame_rate": 30
+        "resolution": "640X360",
+        "frame_rate": 15
       },
       "depth": {
-        "resolution": "1280x720",
-        "frame_rate": 30
+        "resolution": "640X360",
+        "frame_rate": 15
       }
     },
     {
       "type": "RealSense",
       "id": 1,
       "color": {
-        "resolution": "1280x720",
-        "frame_rate": 30
+        "resolution": "640X360",
+        "frame_rate": 15
       },
       "depth": {
-        "resolution": "1280x720",
-        "frame_rate": 30
+        "resolution": "640X360",
+        "frame_rate": 15
       }
     },
     {
       "type": "RealSense",
       "id": 2,
       "color": {
-        "resolution": "1280x720",
-        "frame_rate": 30
+        "resolution": "640X360",
+        "frame_rate": 15
       },
       "depth": {
-        "resolution": "1280x720",
-        "frame_rate": 30
+        "resolution": "640X360",
+        "frame_rate": 15
       }
     }
   ],
