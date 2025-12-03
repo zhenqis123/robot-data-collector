@@ -48,6 +48,13 @@ cd robot-data-collector
 git submodule update --init --recursive
 ```
 
+
+可以通过运行根目录下的test_index_tts.py脚本测试tts服务是否可用：
+```bash
+python3 test_index_tts.py
+```
+我这边尽量保证4090主机的tts服务是在线的。
+
 ## 构建与运行 C++ 应用
 
 在仓库根目录执行 Debug 构建：
