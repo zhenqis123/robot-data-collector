@@ -9,6 +9,21 @@
 - `build/`、`my_project/build/`：本地 CMake 构建目录（不应提交到 Git）。
 - 根目录下的脚本与音频文件：用于本地调试与示例。
 
+## 快速开始
+
+```bash
+git clone https://github.com/zhenqis123/robot-data-collector.git
+cd robot-data-collector
+
+# 如需本地 TTS，可初始化子模块（可选）
+git submodule update --init --recursive
+
+# Debug 构建并运行
+cmake -S my_project -B my_project/build -DCMAKE_BUILD_TYPE=Debug
+cmake --build my_project/build -j
+./my_project/build/DataCollectorApp
+```
+
 ## 环境与依赖（Ubuntu 示例）
 
 运行前在 Ubuntu 上安装以下依赖：
@@ -36,6 +51,8 @@ sudo apt install libcurl4-openssl-dev nlohmann-json3-dev
 # RealSense SDK（如需）
 sudo apt install librealsense2-utils librealsense2-dev librealsense2-dbg
 ```
+
+建议使用较新的 Ubuntu LTS（例如 20.04/22.04），并确保 CMake ≥ 3.16、GCC ≥ 9。
 
 ## 获取代码与子模块
 
@@ -75,6 +92,38 @@ cmake --build my_project/build -j
 
 更多关于设备配置、数据流和扩展方式，参见 `my_project/README.md` 与 `my_project/docs`。
 
+## VLM 任务生成
+
+本项目支持通过多模态大模型自动生成任务模板（用于指导录制过程），相关配置位于 `my_project/resources/config.json` 的 `vlm` 字段：
+
+- `model`：后端使用的模型名称（取决于实际服务实现）。
+- `endpoint`：兼容 OpenAI Chat Completions 的 HTTP 接口地址。
+- `prompt_path`：用于构造系统提示词的文本文件路径（通常为 `resources/prompts/vlm_task_prompt.txt`）。
+- `api_key`：访问 VLM 服务的密钥（推荐留空，改用环境变量）。
+
+运行时，应用会按以下顺序获取 API key：
+- 首选 `config.json` 中的 `vlm.api_key`；
+- 若为空，则尝试读取环境变量 `GPT_API_KEY`。
+
+出于安全考虑，协作开发时推荐：
+- 在 `config.json` 中使用占位符（例如 `"api_key": ""`），
+- 实际密钥通过本地环境变量 `GPT_API_KEY` 提供，并避免提交到 Git。
+
+VLM 生成的任务模板会被保存为：
+- `my_project/resources/logs/vlm_output.json`
+
+GUI 中的 “Generate Task (VLM)” 按钮会调用该流程，成功后即可在任务选择面板中使用生成的模板。
+
+## 测试
+
+在完成构建后，可以在仓库根目录执行：
+
+```bash
+ctest --test-dir my_project/build --output-on-failure
+```
+
+用于运行 C++ 单元测试，建议在提交前保持测试通过。
+
 ## IndexTTS 子模块与权重
 
 如果不需要在本地运行tts服务，可以跳过本节。
@@ -113,6 +162,8 @@ python3 api_server.py \
 ## Git 使用与协作
 
 - 建议默认分支使用 `main`，通过分支 + PR 工作流协作开发。
+- C++ 代码风格：C++17、4 空格缩进，命名与包含顺序等细节请参考根目录 `AGENTS.md`。
+- 第三方子模块（如 `index-tts-vllm/`）与 SDK 目录（如 `librealsense/`）通常不直接改动，如需修改请单独讨论。
 - 提交前请确认：
   - 构建通过：`cmake --build my_project/build -j`
   - 测试通过：`ctest --test-dir my_project/build --output-on-failure`

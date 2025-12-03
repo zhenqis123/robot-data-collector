@@ -13,6 +13,14 @@ cmake --build my_project/build -j
 ```
 运行前确认依赖：Qt5 Widgets/Core/Multimedia、OpenCV、librealsense2（如用 RealSense）。
 
+开发调试阶段也可以使用 Debug 构建：
+
+```bash
+cmake -S my_project -B my_project/build -DCMAKE_BUILD_TYPE=Debug
+cmake --build my_project/build -j
+./my_project/build/DataCollectorApp
+```
+
 ## 设备配置
 `resources/config.json` 中的 `cameras` 数组定义设备，例如：
 ```json
@@ -44,6 +52,16 @@ cmake --build my_project/build -j
 - 采集线程：SDK 拉帧 → enqueue 到显示队列 / 写盘队列 → 可选 ArUco 提交。
 - 显示线程：消费显示队列，调用 Preview 显示并统计显示 FPS。
 - 写盘线程：消费写盘队列，调用设备 writer 落盘并统计写盘 FPS。
+
+## 测试
+
+在完成构建后，可以在仓库根目录或 `my_project` 目录下执行：
+
+```bash
+ctest --test-dir my_project/build --output-on-failure
+```
+
+用于运行 C++ 单元测试，验证采集、存储等核心逻辑。
 
 ## 已知注意事项
 - RealSense 多机需确保 USB3 带宽/供电；若超时频繁可调低分辨率/FPS。
