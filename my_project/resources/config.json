@@ -19,8 +19,8 @@
       "sample_rate": 22050
     },
     "index_tts": {
-      "endpoint": "http://127.0.0.1:6006/tts_url",
-      "audio_paths": ["/home/xiziheng/develop/data_collector/index-tts-vllm/assets/jay_promptvn.wav"]
+      "endpoint": "http://192.168.20.173:6006/tts_url",
+      "audio_paths": ["/home/zc/robot-data-collector/index-tts-vllm/assets/jay_promptvn.wav"]
     },
     "texts": {
       "start": "Recording started. Task {task_id}. Step {step_id}: {step_desc}.",
