@@ -15,6 +15,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QMetaObject>
 
 #include <algorithm>
 #include <cstring>
@@ -173,7 +174,12 @@ void AudioPromptPlayer::synthesizeAndPlayIndexTts(const std::string &text)
     const auto wavBytes = synthesizeIndexTts(text);
     if (wavBytes.isEmpty())
     {
-        playFallbackWav();
+        QMetaObject::invokeMethod(
+            this,
+            [this]() {
+                playFallbackWav();
+            },
+            Qt::QueuedConnection);
         return;
     }
     QString tempPath = QDir::temp().filePath(
@@ -181,17 +187,27 @@ void AudioPromptPlayer::synthesizeAndPlayIndexTts(const std::string &text)
     QFile f(tempPath);
     if (!f.open(QIODevice::WriteOnly))
     {
-        playFallbackWav();
+        QMetaObject::invokeMethod(
+            this,
+            [this]() {
+                playFallbackWav();
+            },
+            Qt::QueuedConnection);
         return;
     }
     f.write(wavBytes);
     f.close();
 
-    auto *player = new QMediaPlayer();
-    player->setMedia(QUrl::fromLocalFile(tempPath));
-    player->setVolume(static_cast<int>(_config.volume * 100));
-    QObject::connect(player, &QMediaPlayer::stateChanged, player, &QObject::deleteLater);
-    player->play();
+    QMetaObject::invokeMethod(
+        this,
+        [this, tempPath]() {
+            auto *player = new QMediaPlayer();
+            player->setMedia(QUrl::fromLocalFile(tempPath));
+            player->setVolume(static_cast<int>(_config.volume * 100));
+            QObject::connect(player, &QMediaPlayer::stateChanged, player, &QObject::deleteLater);
+            player->play();
+        },
+        Qt::QueuedConnection);
 }
 
 void AudioPromptPlayer::playFallbackWav()
