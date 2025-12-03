@@ -10,14 +10,6 @@
     "enabled": true,
     "mode": "IndexTTS",
     "volume": 100,
-    "piper": {
-      "voice_onnx": "/home/xiziheng/develop/data_collector/my_project/resources/voice/en_US-amy-medium.onnx",
-      "voice_config": "/home/xiziheng/develop/data_collector/my_project/resources/voice/en_US-amy-medium.onnx.json",
-      "voice_onnx_cn": "/home/xiziheng/develop/data_collector/my_project/resources/voice/zh_CN-huayan-medium.onnx",
-      "voice_config_cn": "/home/xiziheng/develop/data_collector/my_project/resources/voice/zh_CN-huayan-medium.onnx.json",
-      "espeak_data": "/home/xiziheng/develop/data_collector/piper1-gpl/libpiper/install/espeak-ng-data",
-      "sample_rate": 22050
-    },
     "index_tts": {
       "endpoint": "http://192.168.20.173:6006/tts_url",
       "audio_paths": ["/home/xiziheng/develop/data_collector/index-tts-vllm/assets/jay_promptvn.wav"]
