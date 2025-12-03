@@ -1,6 +1,7 @@
 # Build directories
 /build/
 /my_project/build/
+/my_project/build_release/
 **/CMakeFiles/
 **/CMakeCache.txt
 **/cmake_install.cmake

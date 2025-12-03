@@ -37,8 +37,6 @@ sudo apt install libcurl4-openssl-dev nlohmann-json3-dev
 sudo apt install librealsense2-utils librealsense2-dev librealsense2-dbg
 ```
 
-安装 RealSense 后，可以使用 `realsense-viewer` 测试相机是否工作正常。
-
 ## 获取代码与子模块
 
 ```bash
@@ -51,13 +49,21 @@ git submodule update --init --recursive
 
 ## 构建与运行 C++ 应用
 
-在仓库根目录执行：
+在仓库根目录执行 Debug 构建：
 
 ```bash
 cmake -S my_project -B my_project/build -DCMAKE_BUILD_TYPE=Debug
 cmake --build my_project/build -j
 ./my_project/build/DataCollectorApp
 ```
+
+如果需要一键重新构建 Release 版本，可在仓库根目录运行：
+
+```bash
+./build_release.sh
+```
+
+该脚本会清理并重新生成 `my_project/build_release` 目录，并以 `Release` 配置构建可执行文件。
 
 更多关于设备配置、数据流和扩展方式，参见 `my_project/README.md` 与 `my_project/docs`。
 
@@ -103,4 +109,3 @@ python3 api_server.py \
 - 仓库已忽略构建目录、日志、外部 SDK 和本地模型权重，避免推送大文件。
 
 GitHub 仓库地址：https://github.com/zhenqis123/robot-data-collector.git
-
