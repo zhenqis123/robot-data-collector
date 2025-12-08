@@ -43,6 +43,7 @@ qrc_*.cpp
 # Logs and runtime artifacts
 *.log
 my_project/resources/logs/
+my_project/resources/config.json
 
 # External/optional components
 librealsense/

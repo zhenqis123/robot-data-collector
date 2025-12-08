@@ -39,7 +39,7 @@
     {
       "type": "RealSense",
       "id": 0,
-      "align_depth": true,
+      "align_depth": false,
       "color": {
         "resolution": "640X360",
         "frame_rate": 15
