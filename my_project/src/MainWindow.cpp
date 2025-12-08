@@ -355,6 +355,10 @@ QGroupBox *MainWindow::createVlmGroup()
 {
     auto *box = new QGroupBox(tr("VLM Generation"), _controlPanel);
     auto *layout = new QFormLayout(box);
+    layout->setRowWrapPolicy(QFormLayout::WrapAllRows);
+    layout->setVerticalSpacing(10);
+    box->setMinimumHeight(200);
+    box->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
 
     _vlmEndpointEdit = new QLineEdit();
     _vlmEndpointEdit->setReadOnly(true);
@@ -687,8 +691,8 @@ std::string MainWindow::makeNextStepPromptText(const std::string &stepId, const 
 std::string MainWindow::makeCompletePromptText() const
 {
     if (useChinesePrompts())
-        return "任务已完成。";
-    return "Task completed.";
+        return "本轮任务已完成，将从第一个子任务重新开始。";
+    return "Task completed; restarting from the first subtask.";
 }
 
 void MainWindow::setCurrentTask(const TaskTemplate &task, const std::string &source)
@@ -1432,6 +1436,10 @@ void MainWindow::onAdvanceStep()
     else if (t.subtaskStarted && t.current.has_value())
     {
         _audioPlayer.play("next_step", _currentTask->task.id, t.current->stepId, "", makeNextStepPromptText(t.current->stepId, t.current->subtaskId));
+    }
+    else if (t.taskCompleted)
+    {
+        _audioPlayer.play("complete", _currentTask->task.id, "", "", makeCompletePromptText());
     }
     else if (t.subtaskCompleted)
     {

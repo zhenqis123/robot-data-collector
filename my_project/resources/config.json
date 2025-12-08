@@ -15,17 +15,17 @@
       "audio_paths": ["/home/xiziheng/develop/data_collector/index-tts-vllm/assets/jay_promptvn.wav"]
     },
     "texts": {
-      "start": "Recording started. Task {task_id}. Step {step_id}: {step_desc}.",
-      "next_step": "Next step {step_id}: {step_desc}.",
-      "complete": "Task completed.",
-      "abort": "Task aborted.",
-      "error": "Error noted.",
-      "skip": "Skip current step.",
-      "retry": "Retry current step.",
-      "stop_running": "Recording stopped. Task interrupted.",
-      "stop_completed": "Recording stopped. Task completed.",
-      "vlm_success": "Task generated successfully.",
-      "vlm_fail": "Task generation failed. Please retry."
+      "start": "录制开始。任务{task_id}，步骤{step_id}：{step_desc}。",
+      "next_step": "下一步 {step_id}：{step_desc}。",
+      "complete": "本轮任务已完成，返回开头继续。",
+      "abort": "任务已中止。",
+      "error": "记录异常。",
+      "skip": "已跳过当前步骤。",
+      "retry": "正在重试当前步骤。",
+      "stop_running": "录制已停止，任务中断。",
+      "stop_completed": "录制已停止，任务完成。",
+      "vlm_success": "任务生成成功。",
+      "vlm_fail": "任务生成失败，请重试。"
     },
     "keybindings": {
       "advance": "S",

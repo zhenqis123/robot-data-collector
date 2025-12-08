@@ -111,7 +111,8 @@ TaskStateMachine::Transition TaskStateMachine::advance()
             if (_currentSubtaskIndex >= 0 && !_task.task.subtasks.empty())
             {
                 const int total = static_cast<int>(_task.task.subtasks.size());
-                _currentSubtaskIndex = (total == 0) ? -1 : (_currentSubtaskIndex + 1) % total;
+                const bool lastSubtask = (_currentSubtaskIndex + 1 >= total);
+                _currentSubtaskIndex = (total == 0) ? -1 : (lastSubtask ? 0 : _currentSubtaskIndex + 1);
                 _stepStatus.clear();
                 if (_currentSubtaskIndex >= 0 && _currentSubtaskIndex < total)
                 {
@@ -122,12 +123,15 @@ TaskStateMachine::Transition TaskStateMachine::advance()
                         _stepStatus.push_back(st);
                     }
                 }
+                if (lastSubtask)
+                    t.taskCompleted = true;
                 _currentStepIndex = _stepStatus.empty() ? -1 : 0;
                 _state = State::Ready;
             }
             else
             {
                 // Single-task (no subtasks) loops steps
+                t.taskCompleted = true;
                 _currentStepIndex = _stepStatus.empty() ? -1 : 0;
                 _state = State::Ready;
             }
