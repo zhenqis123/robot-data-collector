@@ -121,7 +121,7 @@ void DataStorage::writeMetadataFile() const
     root["task_template_path"] = _taskTemplatePath;
     root["task_template_version"] = _taskTemplateVersion;
     root["task_source"] = _taskSource;
-
+    root["task_test"] = "temp";
     json cameras = json::array();
     for (const auto &cam : _cameraMetas)
     {
