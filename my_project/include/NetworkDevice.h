@@ -11,6 +11,7 @@ public:
     FrameData captureFrame() override;
     void close() override;
     std::string name() const override;
+    CaptureMetadata captureMetadata() const override;
     std::unique_ptr<FrameWriter> makeWriter(const std::string &basePath, Logger &logger) override;
 
 private:

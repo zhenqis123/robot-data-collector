@@ -19,7 +19,7 @@ TEST(DataStorageTest, WritesMetadataAndEventsOnly)
     Logger logger(storageDir());
     DataStorage storage(storageDir(), logger);
     auto dir = storageDir();
-    storage.beginRecording("UnitTest", "Subject", dir);
+    storage.beginRecording("UnitTest", "Subject", dir, {});
     storage.logEvent("test_event");
     DataStorage::AnnotationEntry entry;
     entry.source = "test";

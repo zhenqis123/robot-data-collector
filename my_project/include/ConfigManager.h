@@ -45,6 +45,7 @@ struct CameraConfig
     int width = 0;
     int height = 0;
     int frameRate = 0;
+    bool alignDepth{true};
     struct StreamConfig
     {
         enum class StreamType { Color, Depth };

@@ -45,6 +45,7 @@ bool ConfigManager::load(const std::string &path)
         config.id = obj.value("id").toInt();
         config.serial = obj.value("serial").toString().toStdString();
         config.endpoint = obj.value("endpoint").toString().toStdString();
+        config.alignDepth = obj.value("align_depth").toBool(true);
         const auto resolution = obj.value("resolution").toString().toStdString();
         const auto [width, height] = parseResolution(resolution);
         const int fps = obj.value("frame_rate").toInt();
@@ -159,7 +160,7 @@ std::optional<CameraConfig> ConfigManager::getCameraConfigById(int id) const
 
 std::pair<int, int> ConfigManager::parseResolution(const std::string &value)
 {
-    auto pos = value.find('x');
+    auto pos = value.find_first_of("xX");
     if (pos == std::string::npos)
         return {0, 0};
     const auto width = std::stoi(value.substr(0, pos));
