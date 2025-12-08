@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <set>
 #include <filesystem>
+#include <fstream>
 #include <chrono>
 #include <librealsense2/rs.hpp>
 #include <nlohmann/json.hpp>
@@ -83,6 +84,7 @@ MainWindow::MainWindow()
     onModeChanged(_modeSelect->currentIndex());
     // Configure audio prompts
     applyAudioConfigForLanguage();
+    updateVlmPromptMetadata();
     refreshCameraSettingsList();
     connectSignals();
     onOpenCameras();
@@ -1199,6 +1201,23 @@ void MainWindow::applyAudioConfigForLanguage()
     apc.indexTts.audioPaths = cfg.indexTts.audioPaths;
     apc.texts = cfg.texts;
     _audioPlayer.configure(apc);
+}
+
+void MainWindow::updateVlmPromptMetadata()
+{
+    const auto &vlm = _configManager.getVlmConfig();
+    std::string content;
+    if (!vlm.promptPath.empty())
+    {
+        std::ifstream in(vlm.promptPath);
+        if (in)
+        {
+            std::ostringstream ss;
+            ss << in.rdbuf();
+            content = ss.str();
+        }
+    }
+    _storage.setVlmPrompt(vlm.promptPath, content);
 }
 
 int MainWindow::keyFromString(const std::string &keyStr) const
