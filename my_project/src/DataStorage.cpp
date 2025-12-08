@@ -121,6 +121,14 @@ void DataStorage::writeMetadataFile() const
     root["task_template_path"] = _taskTemplatePath;
     root["task_template_version"] = _taskTemplateVersion;
     root["task_source"] = _taskSource;
+    if (!_vlmPromptPath.empty())
+    {
+        json prompt;
+        prompt["path"] = _vlmPromptPath;
+        if (!_vlmPromptContent.empty())
+            prompt["content"] = _vlmPromptContent;
+        root["vlm_prompt"] = prompt;
+    }
     json cameras = json::array();
     for (const auto &cam : _cameraMetas)
     {
@@ -175,6 +183,12 @@ void DataStorage::setTaskSelection(const std::string &sceneId,
     _taskTemplatePath = templatePath;
     _taskTemplateVersion = templateVersion;
     _taskSource = source;
+}
+
+void DataStorage::setVlmPrompt(const std::string &path, const std::string &content)
+{
+    _vlmPromptPath = path;
+    _vlmPromptContent = content;
 }
 
 void DataStorage::logEvent(const std::string &eventName)

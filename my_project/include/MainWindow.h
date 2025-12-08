@@ -177,6 +177,7 @@ private:
     void positionRecordingLabel();
     void resizeEvent(QResizeEvent *event) override;
     void applyAudioConfigForLanguage();
+    void updateVlmPromptMetadata();
 
     enum class PromptLanguage { English, Chinese };
     PromptLanguage _promptLanguage{PromptLanguage::Chinese};
