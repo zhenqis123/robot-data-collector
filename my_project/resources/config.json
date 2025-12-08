@@ -39,6 +39,7 @@
     {
       "type": "RealSense",
       "id": 0,
+      "align_depth": true,
       "color": {
         "resolution": "640X360",
         "frame_rate": 15
@@ -51,6 +52,7 @@
     {
       "type": "RealSense",
       "id": 1,
+      "align_depth": true,
       "color": {
         "resolution": "640X360",
         "frame_rate": 15
@@ -63,6 +65,7 @@
     {
       "type": "RealSense",
       "id": 2,
+      "align_depth": true,
       "color": {
         "resolution": "640X360",
         "frame_rate": 15

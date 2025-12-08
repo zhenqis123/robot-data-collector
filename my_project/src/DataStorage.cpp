@@ -19,9 +19,11 @@ DataStorage::DataStorage(const std::string &basePath, Logger &logger)
 
 void DataStorage::beginRecording(const std::string &captureName,
                                  const std::string &subject,
-                                 const std::string &basePath)
+                                 const std::string &basePath,
+                                 const std::vector<CaptureMetadata> &cameraMetas)
 {
     _basePath = basePath;
+    _cameraMetas = cameraMetas;
     if (std::filesystem::exists(_basePath))
     {
         std::filesystem::remove_all(_basePath);
@@ -92,31 +94,75 @@ void DataStorage::writeMetadataFile() const
         _logger.error("Failed to write metadata file at %s", metaPath.string().c_str());
         return;
     }
-    auto escape = [](const std::string &text) {
-        std::string out;
-        for (char c : text)
-        {
-            if (c == '\"')
-                out += "\\\"";
-            else if (c == '\\')
-                out += "\\\\";
-            else
-                out += c;
-        }
-        return out;
+
+    auto intrinsicsToJson = [](const StreamIntrinsics &intr) {
+        json j;
+        if (intr.width > 0)
+            j["width"] = intr.width;
+        if (intr.height > 0)
+            j["height"] = intr.height;
+        j["fx"] = intr.fx;
+        j["fy"] = intr.fy;
+        j["cx"] = intr.cx;
+        j["cy"] = intr.cy;
+        if (!intr.coeffs.empty())
+            j["coeffs"] = intr.coeffs;
+        return j;
     };
-    meta << "{\n";
-    meta << "  \"session_id\": \"" << escape(_sessionId) << "\",\n";
-    meta << "  \"capture_name\": \"" << escape(_captureName) << "\",\n";
-    meta << "  \"subject\": \"" << escape(_subject) << "\",\n";
-    meta << "  \"base_path\": \"" << escape(_basePath) << "\",\n";
-    meta << "  \"start_time\": \"" << timestampToIso(_sessionStart) << "\",\n";
-    meta << "  \"scene_id\": \"" << escape(_sceneId) << "\",\n";
-    meta << "  \"task_id\": \"" << escape(_taskId) << "\",\n";
-    meta << "  \"task_template_path\": \"" << escape(_taskTemplatePath) << "\",\n";
-    meta << "  \"task_template_version\": \"" << escape(_taskTemplateVersion) << "\",\n";
-    meta << "  \"task_source\": \"" << escape(_taskSource) << "\"\n";
-    meta << "}\n";
+
+    json root;
+    root["session_id"] = _sessionId;
+    root["capture_name"] = _captureName;
+    root["subject"] = _subject;
+    root["base_path"] = _basePath;
+    root["start_time"] = timestampToIso(_sessionStart);
+    root["scene_id"] = _sceneId;
+    root["task_id"] = _taskId;
+    root["task_template_path"] = _taskTemplatePath;
+    root["task_template_version"] = _taskTemplateVersion;
+    root["task_source"] = _taskSource;
+
+    json cameras = json::array();
+    for (const auto &cam : _cameraMetas)
+    {
+        json camObj;
+        camObj["id"] = cam.deviceId;
+        if (!cam.model.empty())
+            camObj["model"] = cam.model;
+        if (!cam.serial.empty())
+            camObj["serial"] = cam.serial;
+
+        json streams;
+        if (!cam.colorFormat.empty())
+            streams["color"]["format"] = cam.colorFormat;
+        if (cam.colorFps > 0)
+            streams["color"]["fps"] = cam.colorFps;
+        if (cam.colorIntrinsics.width > 0 || cam.colorIntrinsics.height > 0)
+            streams["color"]["intrinsics"] = intrinsicsToJson(cam.colorIntrinsics);
+        if (!cam.depthFormat.empty())
+            streams["depth"]["format"] = cam.depthFormat;
+        if (cam.depthFps > 0)
+            streams["depth"]["fps"] = cam.depthFps;
+        if (cam.depthIntrinsics.width > 0 || cam.depthIntrinsics.height > 0)
+            streams["depth"]["intrinsics"] = intrinsicsToJson(cam.depthIntrinsics);
+        if (!streams.empty())
+            camObj["streams"] = streams;
+
+        json alignment;
+        alignment["aligned"] = cam.aligned;
+        if (cam.depthScale > 0.0)
+            alignment["depth_scale_m"] = cam.depthScale;
+        alignment["depth_to_color"] = {
+            {"rotation", cam.depthToColor.rotation},
+            {"translation", cam.depthToColor.translation}
+        };
+        camObj["alignment"] = alignment;
+        cameras.push_back(camObj);
+    }
+    if (!cameras.empty())
+        root["cameras"] = cameras;
+
+    meta << root.dump(2);
 }
 
 void DataStorage::setTaskSelection(const std::string &sceneId,

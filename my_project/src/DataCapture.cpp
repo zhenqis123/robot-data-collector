@@ -149,7 +149,14 @@ void DataCapture::startRecording(const std::string &captureName,
         return;
     for (auto &ctxPtr : _devices)
         ctxPtr->dropWarned = false;
-    _storage.beginRecording(captureName, subject, basePath);
+    std::vector<CaptureMetadata> metas;
+    metas.reserve(_devices.size());
+    for (const auto &ctxPtr : _devices)
+    {
+        if (ctxPtr->device)
+            metas.push_back(ctxPtr->device->captureMetadata());
+    }
+    _storage.beginRecording(captureName, subject, basePath, metas);
     for (auto &ctxPtr : _devices)
     {
         if (ctxPtr->device)

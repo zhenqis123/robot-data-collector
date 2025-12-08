@@ -9,6 +9,8 @@
 #include <sstream>
 #include <filesystem>
 #include <memory>
+#include <algorithm>
+#include <utility>
 
 #include "Logger.h"
 #include "IntrinsicsManager.h"
@@ -87,6 +89,7 @@ public:
     }
 
     std::unique_ptr<FrameWriter> makeWriter(const std::string &basePath, Logger &logger) override;
+    CaptureMetadata captureMetadata() const override;
 
 private:
     std::string _model;
@@ -107,6 +110,7 @@ public:
     bool initialize(const CameraConfig &config) override
     {
         _config = config;
+        _alignEnabled = config.alignDepth;
         const int colorWidth = ensurePositive(config.color.width, ensurePositive(config.width, 640));
         const int colorHeight = ensurePositive(config.color.height, ensurePositive(config.height, 480));
         const int colorFps = ensurePositive(config.color.frameRate, ensurePositive(config.frameRate, 30));
@@ -143,6 +147,10 @@ public:
                     sensor.set_option(RS2_OPTION_GLOBAL_TIME_ENABLED, 1.f);
                     _logger.info("Enabled global time sync for sensor %s",
                                  sensor.get_info(RS2_CAMERA_INFO_NAME));
+                }
+                if (auto depthSensor = sensor.as<rs2::depth_sensor>())
+                {
+                    _depthScale = depthSensor.get_depth_scale();
                 }
             }
             if (dev.supports(RS2_CAMERA_INFO_NAME))
@@ -196,6 +204,39 @@ public:
                 data.coeffs.assign(intr.coeffs, intr.coeffs + 5);
                 intrMgr.save(_identifier, data);
             }
+            rs2_extrinsics extrinsics = depthProfile.get_extrinsics_to(colorProfile);
+            _metadata = {};
+            _metadata.deviceId = _identifier;
+            _metadata.model = _cameraName;
+            _metadata.serial = _serial;
+            _metadata.aligned = _alignEnabled;
+            _metadata.depthScale = _depthScale;
+            _metadata.colorFps = colorFps;
+            _metadata.depthFps = depthFps;
+            _metadata.colorFormat = "BGR8";
+            _metadata.depthFormat = "Z16";
+            auto colorIntr = colorProfile.get_intrinsics();
+            _metadata.colorIntrinsics.stream = "color";
+            _metadata.colorIntrinsics.width = colorIntr.width;
+            _metadata.colorIntrinsics.height = colorIntr.height;
+            _metadata.colorIntrinsics.fx = colorIntr.fx;
+            _metadata.colorIntrinsics.fy = colorIntr.fy;
+            _metadata.colorIntrinsics.cx = colorIntr.ppx;
+            _metadata.colorIntrinsics.cy = colorIntr.ppy;
+            _metadata.colorIntrinsics.coeffs.assign(colorIntr.coeffs, colorIntr.coeffs + 5);
+            auto depthIntr = depthProfile.get_intrinsics();
+            _metadata.depthIntrinsics.stream = "depth";
+            _metadata.depthIntrinsics.width = depthIntr.width;
+            _metadata.depthIntrinsics.height = depthIntr.height;
+            _metadata.depthIntrinsics.fx = depthIntr.fx;
+            _metadata.depthIntrinsics.fy = depthIntr.fy;
+            _metadata.depthIntrinsics.cx = depthIntr.ppx;
+            _metadata.depthIntrinsics.cy = depthIntr.ppy;
+            _metadata.depthIntrinsics.coeffs.assign(depthIntr.coeffs, depthIntr.coeffs + 5);
+            std::copy(std::begin(extrinsics.rotation), std::end(extrinsics.rotation),
+                      _metadata.depthToColor.rotation.begin());
+            std::copy(std::begin(extrinsics.translation), std::end(extrinsics.translation),
+                      _metadata.depthToColor.translation.begin());
             return true;
         }
         catch (const rs2::error &e)
@@ -215,9 +256,9 @@ public:
         try
         {
             rs2::frameset frames = _pipeline.wait_for_frames(15000);
-            auto aligned = _align.process(frames);
-            rs2::video_frame color = aligned.get_color_frame();
-            rs2::depth_frame depth = aligned.get_depth_frame();
+            rs2::frameset processed = _alignEnabled ? _align.process(frames) : frames;
+            rs2::video_frame color = processed.get_color_frame();
+            rs2::depth_frame depth = processed.get_depth_frame();
 
             if (!color || !depth)
             {
@@ -323,24 +364,30 @@ public:
     }
 
     std::unique_ptr<FrameWriter> makeWriter(const std::string &basePath, Logger &logger) override;
+    CaptureMetadata captureMetadata() const override;
 
 private:
     Logger &_logger;
     CameraConfig _config;
+    bool _alignEnabled{true};
     rs2::pipeline _pipeline;
     rs2::config _rsConfig;
     rs2::align _align;
+    double _depthScale{0.0};
     bool _running{false};
     std::string _cameraName{"RealSense"};
     std::string _serial;
     std::string _identifier;
+    CaptureMetadata _metadata;
 };
 } // namespace
 
 class PngFrameWriter : public FrameWriter
 {
 public:
-    PngFrameWriter(const std::string &deviceId, const std::string &basePath, Logger &logger)
+    PngFrameWriter(const std::string &deviceId,
+                   const std::string &basePath,
+                   Logger &logger)
         : _deviceId(deviceId), _basePath(basePath), _logger(logger)
     {
     }
@@ -454,7 +501,28 @@ std::unique_ptr<FrameWriter> SimulatedCamera::makeWriter(const std::string &base
     return makePngWriter(_label, basePath, logger);
 }
 
+CaptureMetadata SimulatedCamera::captureMetadata() const
+{
+    CaptureMetadata meta;
+    meta.deviceId = _label;
+    meta.model = _model;
+    meta.aligned = false;
+    meta.colorFormat = "BGR8";
+    meta.colorIntrinsics.stream = "color";
+    meta.colorIntrinsics.width = ensurePositive(_config.color.width, ensurePositive(_config.width, 640));
+    meta.colorIntrinsics.height = ensurePositive(_config.color.height, ensurePositive(_config.height, 480));
+    meta.colorFps = ensurePositive(_config.color.frameRate, ensurePositive(_config.frameRate, 30));
+    return meta;
+}
+
 std::unique_ptr<FrameWriter> RealSenseCamera::makeWriter(const std::string &basePath, Logger &logger)
 {
     return makePngWriter(name(), basePath, logger);
+}
+
+CaptureMetadata RealSenseCamera::captureMetadata() const
+{
+    CaptureMetadata meta = _metadata;
+    meta.aligned = _alignEnabled;
+    return meta;
 }
