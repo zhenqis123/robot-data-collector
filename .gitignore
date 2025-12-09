@@ -52,3 +52,5 @@ todo.md
 AGENTS.md
 *.wav
 !jay_promptvn.wav
+sess*/
+*.mp4

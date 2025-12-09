@@ -5,8 +5,8 @@ Offline depth-to-color alignment using saved meta.json and PNG frames.
 Usage:
     python offline_align.py /path/to/captures_root
 
-The script searches the given root (and up to two subdirectory levels) for
-meta.json files, then for each camera listed in meta.json:
+The script searches the given root recursively for meta.json files, then for
+each camera listed in meta.json:
 - loads intrinsics/extrinsics/depth scale
 - reads depth PNGs from <capture>/<camera>/depth
 - aligns them to the color frame size
