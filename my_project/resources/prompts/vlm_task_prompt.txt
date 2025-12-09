@@ -8,7 +8,7 @@ Rules (concise, same behavior):
 - English for all fields; `spoken_prompt_cn` fields in natural Chinese.
 - Stay within the described scene; involved_objects must reference scene.objects only.
 - Keep ids short/stable (scene_id/object_id/subtask_id/step_id).
-- Use 2–3 subtasks; each subtask has ≥2 steps; each step is one complete continuous action (no micro-steps).
+- Use 1–3 subtasks; each subtask must has ≥2 steps; each step is one complete continuous action (no micro-steps).
 - Spoken prompts must match their level (task = overall instruction, subtask = subtask instruction, step = immediate action), each with matching `spoken_prompt_cn`.
 - All executable steps live under subtasks; subtasks/steps arrays must be non-empty; no top-level task.steps.
 - scene.objects.state: placement is a simple token (e.g., "on_desk"); relative is a short phrase (e.g., "to the left of the monitor").
