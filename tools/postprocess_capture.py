@@ -21,15 +21,15 @@ import argparse
 import sys
 from pathlib import Path
 
-# Ensure local tools package import works when run as script
+# Ensure local imports work when run as script
 CURRENT_DIR = Path(__file__).resolve().parent
-if str(CURRENT_DIR.parent) not in sys.path:
-    sys.path.insert(0, str(CURRENT_DIR.parent))
+if str(CURRENT_DIR) not in sys.path:
+    sys.path.insert(0, str(CURRENT_DIR))
 
-from tools import align as align_mod
-from tools import timestamps as ts_mod
-from tools import videos as vid_mod
-from tools import pack as pack_mod
+import align_depth as align_mod
+import align_timestamps as ts_mod
+import encode_videos as vid_mod
+import pack as pack_mod
 
 
 def cmd_align(root: Path) -> None:
