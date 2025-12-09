@@ -21,7 +21,7 @@
     "id": "task_full_office_workflow",
     "description": "Execute a workflow: sort fruits into cups, archive documents, and clean up the workspace.",
     "spoken_prompt": "Sort the items, archive the papers, and then clean up.",
-    "spoken_prompt_cn": "请完成物品分装、文档归档，最后清理桌面。",
+    "spoken_prompt_cn": "任务开始。本次流程包含三个阶段：分装、归档和清理。",
     "involved_objects": [
       { "object_id": "cup_1", "name": "paper cup 1", "role": "container", "optional": false },
       { "object_id": "cup_2", "name": "paper cup 2", "role": "container", "optional": false },
@@ -39,8 +39,8 @@
       {
         "id": "subtask_sort_write",
         "description": "Separate cups, place fruits in them, and write a note.",
-        "spoken_prompt": "Arrange the cups and fruits, then write the note.",
-        "spoken_prompt_cn": "摆好杯子和水果，然后写个便条。",
+        "spoken_prompt": "Phase 1: Arrange the cups and fruits, then write the note.",
+        "spoken_prompt_cn": "准备进入第一阶段：物品分装与书写。",
         "involved_objects": [
           { "object_id": "cup_1", "name": "paper cup 1", "role": "container", "optional": false },
           { "object_id": "cup_2", "name": "paper cup 2", "role": "container", "optional": false },
@@ -52,18 +52,18 @@
           { "object_id": "paper_main", "name": "bottom white paper", "role": "destination", "optional": false }
         ],
         "steps": [
-          { "id": "s1_separate_cups", "description": "Separate the three stacked cups and line them up horizontally.", "spoken_prompt": "Separate the cups and line them up.", "spoken_prompt_cn": "把重叠的三个纸杯分开，然后一字排开。", "involved_objects": [ { "object_id": "cup_1", "name": "paper cup 1", "role": "manipulated", "optional": false }, { "object_id": "cup_2", "name": "paper cup 2", "role": "manipulated", "optional": false }, { "object_id": "cup_3", "name": "paper cup 3", "role": "manipulated", "optional": false } ] },
-          { "id": "s1_orange", "description": "Place the orange in the leftmost cup (cup 1).", "spoken_prompt": "Orange in the left cup.", "spoken_prompt_cn": "把橙子放在最左边的杯子里。", "involved_objects": [ { "object_id": "orange", "name": "orange toy", "role": "manipulated", "optional": false }, { "object_id": "cup_1", "name": "paper cup 1", "role": "container", "optional": false } ] },
-          { "id": "s1_apple", "description": "Place the apple in the middle cup (cup 2).", "spoken_prompt": "Apple in the middle cup.", "spoken_prompt_cn": "把苹果放在中间的杯子里。", "involved_objects": [ { "object_id": "apple", "name": "red apple toy", "role": "manipulated", "optional": false }, { "object_id": "cup_2", "name": "paper cup 2", "role": "container", "optional": false } ] },
-          { "id": "s1_peach", "description": "Place the peach in the rightmost cup (cup 3).", "spoken_prompt": "Peach in the right cup.", "spoken_prompt_cn": "把桃子放在最右边的杯子里。", "involved_objects": [ { "object_id": "peach", "name": "pink peach toy", "role": "manipulated", "optional": false }, { "object_id": "cup_3", "name": "paper cup 3", "role": "container", "optional": false } ] },
-          { "id": "s1_write", "description": "Use the pen to write 'beingbeyond' on the bottom paper.", "spoken_prompt": "Write 'beingbeyond' on the paper.", "spoken_prompt_cn": "拿起笔，在中间的纸上写下：beingbeyond字样。", "involved_objects": [ { "object_id": "pen", "name": "black pen", "role": "manipulated", "optional": false }, { "object_id": "paper_main", "name": "bottom white paper", "role": "destination", "optional": false } ] }
+          { "id": "s1_separate_cups", "description": "Separate the three stacked cups and line them up horizontally.", "spoken_prompt": "First, separate the cups and line them up.", "spoken_prompt_cn": "首先，请把重叠的三个纸杯分开，然后一字排开。", "involved_objects": [ { "object_id": "cup_1", "name": "paper cup 1", "role": "manipulated", "optional": false }, { "object_id": "cup_2", "name": "paper cup 2", "role": "manipulated", "optional": false }, { "object_id": "cup_3", "name": "paper cup 3", "role": "manipulated", "optional": false } ] },
+          { "id": "s1_orange", "description": "Place the orange in the leftmost cup (cup 1).", "spoken_prompt": "Now, put the orange in the left cup.", "spoken_prompt_cn": "接着，把橙子放在最左边的杯子里。", "involved_objects": [ { "object_id": "orange", "name": "orange toy", "role": "manipulated", "optional": false }, { "object_id": "cup_1", "name": "paper cup 1", "role": "container", "optional": false } ] },
+          { "id": "s1_apple", "description": "Place the apple in the middle cup (cup 2).", "spoken_prompt": "Next, apple in the middle cup.", "spoken_prompt_cn": "然后，把苹果放在中间的杯子里。", "involved_objects": [ { "object_id": "apple", "name": "red apple toy", "role": "manipulated", "optional": false }, { "object_id": "cup_2", "name": "paper cup 2", "role": "container", "optional": false } ] },
+          { "id": "s1_peach", "description": "Place the peach in the rightmost cup (cup 3).", "spoken_prompt": "And peach in the right cup.", "spoken_prompt_cn": "再把桃子放在最右边的杯子里。", "involved_objects": [ { "object_id": "peach", "name": "pink peach toy", "role": "manipulated", "optional": false }, { "object_id": "cup_3", "name": "paper cup 3", "role": "container", "optional": false } ] },
+          { "id": "s1_write", "description": "Use the pen to write 'beingbeyond' on the bottom paper.", "spoken_prompt": "Finally, write 'beingbeyond' on the paper.", "spoken_prompt_cn": "这一步最后，拿起笔，在中间的纸上写下：beingbeyond。", "involved_objects": [ { "object_id": "pen", "name": "black pen", "role": "manipulated", "optional": false }, { "object_id": "paper_main", "name": "bottom white paper", "role": "destination", "optional": false } ] }
         ]
       },
       {
         "id": "subtask_archive",
         "description": "Stack papers, clip them, and weight them down.",
-        "spoken_prompt": "Organize and file the documents.",
-        "spoken_prompt_cn": "整理文档并归档。",
+        "spoken_prompt": "Phase 2: Organize and file the documents.",
+        "spoken_prompt_cn": "接下来进入第二阶段：文档归档。",
         "involved_objects": [
           { "object_id": "paper_main", "name": "bottom white paper", "role": "destination", "optional": false },
           { "object_id": "paper_secondary", "name": "top white paper", "role": "manipulated", "optional": false },
@@ -71,16 +71,16 @@
           { "object_id": "block_large", "name": "large blue block", "role": "manipulated", "optional": false }
         ],
         "steps": [
-          { "id": "s2_stack_papers", "description": "Place the top paper onto the bottom paper.", "spoken_prompt": "Stack the papers together.", "spoken_prompt_cn": "把那张白纸叠在刚才写的纸上。", "involved_objects": [ { "object_id": "paper_secondary", "name": "top white paper", "role": "manipulated", "optional": false }, { "object_id": "paper_main", "name": "bottom white paper", "role": "destination", "optional": false } ] },
-          { "id": "s2_clip", "description": "Use the binder clip to clip the stacked papers together.", "spoken_prompt": "Clip them with the binder clip.", "spoken_prompt_cn": "用长尾夹把它们夹好。", "involved_objects": [ { "object_id": "binder_clip", "name": "black binder clip", "role": "manipulated", "optional": false }, { "object_id": "paper_main", "name": "bottom white paper", "role": "destination", "optional": false } ] },
-          { "id": "s2_weight_down", "description": "Place the large blue block on the corner of the papers.", "spoken_prompt": "Secure it with the blue block.", "spoken_prompt_cn": "用那个大蓝色方块压在纸角上。", "involved_objects": [ { "object_id": "block_large", "name": "large blue block", "role": "manipulated", "optional": false }, { "object_id": "paper_main", "name": "bottom white paper", "role": "destination", "optional": false } ] }
+          { "id": "s2_stack_papers", "description": "Place the top paper onto the bottom paper.", "spoken_prompt": "Stack the papers together.", "spoken_prompt_cn": "现在，把那张空白的白纸叠在刚才写过字的纸上。", "involved_objects": [ { "object_id": "paper_secondary", "name": "top white paper", "role": "manipulated", "optional": false }, { "object_id": "paper_main", "name": "bottom white paper", "role": "destination", "optional": false } ] },
+          { "id": "s2_clip", "description": "Use the binder clip to clip the stacked papers together.", "spoken_prompt": "Clip them with the binder clip.", "spoken_prompt_cn": "动作继续，用长尾夹把它们夹好。", "involved_objects": [ { "object_id": "binder_clip", "name": "black binder clip", "role": "manipulated", "optional": false }, { "object_id": "paper_main", "name": "bottom white paper", "role": "destination", "optional": false } ] },
+          { "id": "s2_weight_down", "description": "Place the large blue block on the corner of the papers.", "spoken_prompt": "Secure it with the blue block.", "spoken_prompt_cn": "最后，搬运那个大蓝色方块，压在纸的角上。", "involved_objects": [ { "object_id": "block_large", "name": "large blue block", "role": "manipulated", "optional": false }, { "object_id": "paper_main", "name": "bottom white paper", "role": "destination", "optional": false } ] }
         ]
       },
       {
         "id": "subtask_cleanup",
         "description": "Reset the toys and cups to a clean state.",
-        "spoken_prompt": "Clean up the desk.",
-        "spoken_prompt_cn": "现在复原并清理桌面。",
+        "spoken_prompt": "Phase 3: Clean up the desk.",
+        "spoken_prompt_cn": "最后进入第三阶段：清理与复原。",
         "involved_objects": [
           { "object_id": "cup_1", "name": "paper cup 1", "role": "manipulated", "optional": false },
           { "object_id": "cup_2", "name": "paper cup 2", "role": "manipulated", "optional": false },
@@ -91,14 +91,14 @@
           { "object_id": "pen", "name": "black pen", "role": "manipulated", "optional": false }
         ],
         "steps": [
-          { "id": "s3_remove_fruits", "description": "Remove the orange, apple, and peach from the cups and place them on the desk.", "spoken_prompt": "Take the fruits out of the cups.", "spoken_prompt_cn": "把水果从杯子里拿出来放回桌上。", "involved_objects": [ { "object_id": "orange", "name": "orange toy", "role": "manipulated", "optional": false }, { "object_id": "apple", "name": "red apple toy", "role": "manipulated", "optional": false }, { "object_id": "peach", "name": "pink peach toy", "role": "manipulated", "optional": false } ] },
-          { "id": "s3_stack_cups", "description": "Stack the three paper cups back together.", "spoken_prompt": "Stack the cups back up.", "spoken_prompt_cn": "把三个杯子重新叠在一起。", "involved_objects": [ { "object_id": "cup_1", "name": "paper cup 1", "role": "destination", "optional": false }, { "object_id": "cup_2", "name": "paper cup 2", "role": "manipulated", "optional": false }, { "object_id": "cup_3", "name": "paper cup 3", "role": "manipulated", "optional": false } ] },
-          { "id": "s3_stow_pen", "description": "Place the pen neatly aside.", "spoken_prompt": "Put the pen away.", "spoken_prompt_cn": "把笔收好放一边。", "involved_objects": [ { "object_id": "pen", "name": "black pen", "role": "manipulated", "optional": false } ] }
+          { "id": "s3_remove_fruits", "description": "Remove the orange, apple, and peach from the cups and place them on the desk.", "spoken_prompt": "Take the fruits out of the cups.", "spoken_prompt_cn": "请先将三个水果从杯子里拿出来，放回桌面上。", "involved_objects": [ { "object_id": "orange", "name": "orange toy", "role": "manipulated", "optional": false }, { "object_id": "apple", "name": "red apple toy", "role": "manipulated", "optional": false }, { "object_id": "peach", "name": "pink peach toy", "role": "manipulated", "optional": false } ] },
+          { "id": "s3_stack_cups", "description": "Stack the three paper cups back together.", "spoken_prompt": "Stack the cups back up.", "spoken_prompt_cn": "接着，把三个空纸杯重新叠在一起。", "involved_objects": [ { "object_id": "cup_1", "name": "paper cup 1", "role": "destination", "optional": false }, { "object_id": "cup_2", "name": "paper cup 2", "role": "manipulated", "optional": false }, { "object_id": "cup_3", "name": "paper cup 3", "role": "manipulated", "optional": false } ] },
+          { "id": "s3_stow_pen", "description": "Place the pen neatly aside.", "spoken_prompt": "Put the pen away.", "spoken_prompt_cn": "最后一步，把笔收好，放在旁边。", "involved_objects": [ { "object_id": "pen", "name": "black pen", "role": "manipulated", "optional": false } ] }
         ]
       }
     ]
   },
   "constraints": {
-    "notes": "Ensure the paper stack is aligned before clipping. When stacking cups in cleanup, ensure no fruits remain inside."
+    "notes": "Spoken prompts are tiered: Subtasks set the context (Phase X), Steps command the action (Now/Next)."
   }
 }
