@@ -1441,7 +1441,11 @@ void MainWindow::onAdvanceStep()
     }
     _storage.logEvent("step_trigger");
     auto t = _taskMachine.advance();
-    if (t.state == TaskStateMachine::State::SubtaskReady && !t.subtaskStarted)
+    if (t.taskCompleted)
+    {
+        _audioPlayer.play("complete", _currentTask->task.id, "", "", makeCompletePromptText());
+    }
+    else if (t.state == TaskStateMachine::State::SubtaskReady && !t.subtaskStarted)
     {
         const auto subId = t.current ? t.current->subtaskId : "";
         const auto subDescCn = getSubtaskSpokenPromptCnById(subId);
@@ -1455,14 +1459,6 @@ void MainWindow::onAdvanceStep()
     else if (t.subtaskStarted && t.current.has_value())
     {
         _audioPlayer.play("next_step", _currentTask->task.id, t.current->stepId, "", makeNextStepPromptText(t.current->stepId, t.current->subtaskId));
-    }
-    else if (t.taskCompleted)
-    {
-        _audioPlayer.play("complete", _currentTask->task.id, "", "", makeCompletePromptText());
-    }
-    else if (t.subtaskCompleted)
-    {
-        _audioPlayer.play("complete", _currentTask->task.id, "", "", makeCompletePromptText());
     }
     else if (t.current.has_value())
     {

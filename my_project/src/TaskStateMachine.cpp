@@ -126,7 +126,7 @@ TaskStateMachine::Transition TaskStateMachine::advance()
                 if (lastSubtask)
                     t.taskCompleted = true;
                 _currentStepIndex = _stepStatus.empty() ? -1 : 0;
-                _state = State::Ready;
+                _state = _stepStatus.empty() ? State::Ready : State::SubtaskReady;
             }
             else
             {
