@@ -31,6 +31,7 @@ struct TaskStep
     std::string description;
     std::string spokenPrompt;
     std::string spokenPromptCn;
+    std::string videoPath;
     std::vector<TaskStepObject> involvedObjects;
 };
 

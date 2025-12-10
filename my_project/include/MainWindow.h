@@ -32,6 +32,8 @@ class QWidget;
 class QScrollArea;
 class QGroupBox;
 class QDialog;
+class QMediaPlayer;
+class QVideoWidget;
 
 class MainWindow : public QMainWindow
 {
@@ -101,11 +103,14 @@ private:
     QLabel *_sceneLabel{nullptr};
     QLabel *_taskLabel{nullptr};
     QLabel *_recordingLabel{nullptr};
+    QLabel *_promptStepLabel{nullptr};
     QVBoxLayout *_devicesLayout{nullptr};
     QWidget *_devicesWidget{nullptr};
     QScrollArea *_scrollArea{nullptr};
     QWidget *_controlPanel{nullptr};
     QDialog *_promptWindow{nullptr};
+    QMediaPlayer *_promptPlayer{nullptr};
+    QVideoWidget *_promptVideoWidget{nullptr};
     QComboBox *_sceneSelect{nullptr};
     QComboBox *_taskSelect{nullptr};
     QWidget *_taskSelectionGroup{nullptr};
@@ -171,6 +176,10 @@ private:
     std::string getStepSpokenPromptCnById(const std::string &stepId, const std::string &subtaskId = "") const;
     std::string getSubtaskSpokenPromptCnById(const std::string &subtaskId) const;
     std::string getTaskSpokenPromptCn() const;
+    std::string getStepVideoPathById(const std::string &stepId, const std::string &subtaskId = "") const;
+    void updatePromptWindowMedia(const std::string &subtaskId, const std::string &stepId);
+    void stopPromptVideo();
+    void ensurePromptWindow();
     void updateKeyBindings();
     int keyFromString(const std::string &keyStr) const;
     void updateRecordingBanner();

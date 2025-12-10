@@ -2,6 +2,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -52,6 +53,7 @@ TaskStep TaskLoader::parseTaskStep(const QJsonObject &obj)
     step.description = obj.value("description").toString().toStdString();
     step.spokenPrompt = obj.value("spoken_prompt").toString().toStdString();
     step.spokenPromptCn = obj.value("spoken_prompt_cn").toString().toStdString();
+    step.videoPath = obj.value("video_path").toString().toStdString();
     const auto involved = obj.value("involved_objects").toArray();
     for (const auto &item : involved)
     {
@@ -106,6 +108,7 @@ std::optional<TaskTemplate> TaskLoader::loadTaskFile(const std::string &path)
     }
 
     const auto subtasks = taskObj.value("subtasks").toArray();
+    const QString baseDir = QFileInfo(QString::fromStdString(path)).absolutePath();
     if (!subtasks.isEmpty())
     {
         for (const auto &entry : subtasks)
@@ -124,8 +127,20 @@ std::optional<TaskTemplate> TaskLoader::loadTaskFile(const std::string &path)
                     st.involvedObjects.push_back(parseStepObject(io.toObject()));
             const auto stSteps = stObj.value("steps").toArray();
             for (const auto &s : stSteps)
+            {
                 if (s.isObject())
-                    st.steps.push_back(parseTaskStep(s.toObject()));
+                {
+                    auto parsed = parseTaskStep(s.toObject());
+                    if (!parsed.videoPath.empty())
+                    {
+                        QFileInfo fi(parsed.videoPath.c_str());
+                        if (fi.isRelative())
+                            fi.setFile(baseDir + "/" + fi.filePath());
+                        parsed.videoPath = fi.absoluteFilePath().toStdString();
+                    }
+                    st.steps.push_back(std::move(parsed));
+                }
+            }
             task.task.subtasks.push_back(std::move(st));
         }
     }
@@ -135,7 +150,17 @@ std::optional<TaskTemplate> TaskLoader::loadTaskFile(const std::string &path)
         for (const auto &entry : steps)
         {
             if (entry.isObject())
-                task.task.steps.push_back(parseTaskStep(entry.toObject()));
+            {
+                auto parsed = parseTaskStep(entry.toObject());
+                if (!parsed.videoPath.empty())
+                {
+                    QFileInfo fi(parsed.videoPath.c_str());
+                    if (fi.isRelative())
+                        fi.setFile(baseDir + "/" + fi.filePath());
+                    parsed.videoPath = fi.absoluteFilePath().toStdString();
+                }
+                task.task.steps.push_back(std::move(parsed));
+            }
         }
     }
 
