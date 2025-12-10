@@ -78,6 +78,18 @@ bool ConfigManager::load(const std::string &path)
         config.width = config.color.width > 0 ? config.color.width : width;
         config.height = config.color.height > 0 ? config.color.height : height;
         config.frameRate = config.color.frameRate > 0 ? config.color.frameRate : fps;
+
+        // Load extra settings for generic devices
+        for (auto it = obj.begin(); it != obj.end(); ++it)
+        {
+            if (it.key() != "type" && it.key() != "id" && it.key() != "serial" && 
+                it.key() != "endpoint" && it.key() != "resolution" && 
+                it.key() != "frame_rate" && it.key() != "color" && it.key() != "depth")
+            {
+                config.extraSettings[it.key().toStdString()] = it.value().toVariant().toString().toStdString();
+            }
+        }
+
         _cameraConfigs.push_back(config);
     }
 

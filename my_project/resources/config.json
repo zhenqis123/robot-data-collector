@@ -48,6 +48,20 @@
         "resolution": "640X360",
         "frame_rate": 30
       }
+    },
+    {
+      "type": "VDGlove",
+      "id": 3,
+      "server_ip": "192.168.20.240",
+      "server_port": 9998,
+      "local_port": 9999,
+      "device_index": 0,
+      "process_mano": true
+    },
+    {
+      "type": "Vive",
+      "id": 4,
+      "port": 6666
     }
   ],
   "aruco_targets": [

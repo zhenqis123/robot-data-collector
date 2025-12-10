@@ -159,6 +159,17 @@ python3 api_server.py \
 
 更多细节请参考 `my_project/README.md` 与 `my_project/docs` 中的设计与示例。
 
+## VIVE tracker 和 VD Glove
+
+使用局域网发送数据, 分别设置接收端口, 如6666和9999, 然后开启端口防火墙:
+```bash
+sudo ufw allow 9999/udp
+sudo ufw allow 6666/udp
+sudo ufw reload
+```
+
+将 libVDMocapSDK_DataRead.so 放到 my_project/resources/libVDMocapSDK_DataRead.so
+
 ## Git 使用与协作
 
 - 建议默认分支使用 `main`，通过分支 + PR 工作流协作开发。

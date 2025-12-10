@@ -17,6 +17,8 @@
 #include "Logger.h"
 #include "IntrinsicsManager.h"
 #include "NetworkDevice.h"
+#include "VDGloveInterface.h"
+#include "ViveInterface.h"
 
 namespace
 {
@@ -600,6 +602,11 @@ std::unique_ptr<CameraInterface> createCamera(const CameraConfig &config, Logger
         return std::make_unique<NetworkDevice>(logger);
     if (config.type == "Webcam")
         return std::make_unique<WebcamCamera>(logger);
+    if (config.type == "VDGlove")
+        return createGloveDevice(config.type, logger);
+    if (config.type == "Vive" || config.type == "ViveTracker")
+        return createViveDevice(logger);
+
     logger.warn("Unknown camera type '%s', defaulting to RGB", config.type.c_str());
     return std::make_unique<SimulatedCamera>("RGB", logger);
 }

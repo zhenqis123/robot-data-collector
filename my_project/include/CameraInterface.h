@@ -5,9 +5,13 @@
 #include <string>
 #include <opencv2/core.hpp>
 #include <chrono>
+#include <optional>
+#include <variant>
 
 #include "ConfigManager.h"
 #include "IntrinsicsManager.h"
+#include "VDGloveDataTypes.h"
+#include "ViveDataTypes.h"
 
 class Logger;
 
@@ -18,6 +22,10 @@ struct FrameData
     std::chrono::system_clock::time_point timestamp;
     int64_t deviceTimestampMs{0};
     std::string cameraId;
+    
+    // Optional sensor data
+    std::optional<VDGloveFrameData> gloveData;
+    std::optional<ViveFrameData> viveData;
 };
 struct ArucoDetection
 {
