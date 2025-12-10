@@ -4,6 +4,7 @@
 
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/videoio.hpp>
 #include <thread>
 #include <iomanip>
 #include <sstream>
@@ -11,6 +12,7 @@
 #include <memory>
 #include <algorithm>
 #include <utility>
+#include <cctype>
 
 #include "Logger.h"
 #include "IntrinsicsManager.h"
@@ -139,7 +141,8 @@ public:
             _rsConfig.enable_stream(RS2_STREAM_COLOR, colorWidth, colorHeight, RS2_FORMAT_BGR8, colorFps);
             _rsConfig.enable_stream(RS2_STREAM_DEPTH, depthWidth, depthHeight, RS2_FORMAT_Z16, depthFps);
             auto profile = _pipeline.start(_rsConfig);
-            auto dev = profile.get_device();
+            _device = profile.get_device();
+            auto dev = _device;
             for (auto &&sensor : dev.query_sensors())
             {
                 if (sensor.supports(RS2_OPTION_GLOBAL_TIME_ENABLED))
@@ -280,9 +283,13 @@ public:
         catch (const rs2::error &e)
         {
             _logger.error("RealSense capture failed: %s", e.what());
-            // Attempt a soft restart on timeouts or pipeline errors if still running
+            // Attempt a restart (with optional hardware reset) on timeouts or pipeline errors if still running
             if (_running)
             {
+                const std::string msg = e.what();
+                const bool timeout = msg.find("Frame didn't arrive") != std::string::npos ||
+                                     msg.find("Timeout") != std::string::npos ||
+                                     msg.find("timeout") != std::string::npos;
                 try
                 {
                     _pipeline.stop();
@@ -292,8 +299,15 @@ public:
                 }
                 try
                 {
-                    _pipeline.start(_rsConfig);
-                    _logger.info("RealSense pipeline restarted for %s", name().c_str());
+                    if (timeout && _device)
+                    {
+                        _logger.info("RealSense: hardware reset before restart for %s", name().c_str());
+                        _device.hardware_reset();
+                        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+                    }
+                    auto profile = _pipeline.start(_rsConfig);
+                    _device = profile.get_device();
+                    _logger.info("RealSense pipeline restarted for %s (timeout=%d)", name().c_str(), timeout ? 1 : 0);
                 }
                 catch (const rs2::error &re)
                 {
@@ -373,12 +387,104 @@ private:
     rs2::pipeline _pipeline;
     rs2::config _rsConfig;
     rs2::align _align;
+    rs2::device _device;
     double _depthScale{0.0};
     bool _running{false};
     std::string _cameraName{"RealSense"};
     std::string _serial;
     std::string _identifier;
     CaptureMetadata _metadata;
+};
+
+class WebcamCamera : public CameraInterface
+{
+public:
+    explicit WebcamCamera(Logger &logger)
+        : _logger(logger)
+    {
+    }
+
+    bool initialize(const CameraConfig &config) override
+    {
+        _config = config;
+        const int index = config.id;
+        const int colorWidth = ensurePositive(config.color.width, ensurePositive(config.width, 640));
+        const int colorHeight = ensurePositive(config.color.height, ensurePositive(config.height, 480));
+        const int colorFps = ensurePositive(config.color.frameRate, ensurePositive(config.frameRate, 30));
+        _config.color.width = colorWidth;
+        _config.color.height = colorHeight;
+        _config.color.frameRate = colorFps;
+        _capture.open(index);
+        if (!_capture.isOpened())
+        {
+            _logger.error("Webcam %d failed to open", index);
+            return false;
+        }
+        if (colorWidth > 0)
+            _capture.set(cv::CAP_PROP_FRAME_WIDTH, colorWidth);
+        if (colorHeight > 0)
+            _capture.set(cv::CAP_PROP_FRAME_HEIGHT, colorHeight);
+        if (colorFps > 0)
+            _capture.set(cv::CAP_PROP_FPS, colorFps);
+        _label = "Webcam#" + std::to_string(index);
+        _running = true;
+        return true;
+    }
+
+    FrameData captureFrame() override
+    {
+        FrameData data;
+        if (!_running)
+            return data;
+        cv::Mat frame;
+        if (!_capture.read(frame))
+        {
+            _logger.warn("Webcam %s read failed", _label.c_str());
+            return data;
+        }
+        data.image = frame.clone();
+        data.timestamp = std::chrono::system_clock::now();
+        data.deviceTimestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                     std::chrono::steady_clock::now().time_since_epoch())
+                                     .count();
+        data.cameraId = _label;
+        return data;
+    }
+
+    void close() override
+    {
+        if (_capture.isOpened())
+            _capture.release();
+        _running = false;
+    }
+
+    std::string name() const override { return _label.empty() ? "Webcam" : _label; }
+
+    std::unique_ptr<FrameWriter> makeWriter(const std::string &basePath, Logger &logger) override
+    {
+        return makePngWriter(name(), basePath, logger);
+    }
+
+    CaptureMetadata captureMetadata() const override
+    {
+        CaptureMetadata meta;
+        meta.deviceId = _label;
+        meta.model = "Webcam";
+        meta.aligned = false;
+        meta.colorFormat = "BGR8";
+        meta.colorIntrinsics.stream = "color";
+        meta.colorIntrinsics.width = ensurePositive(_config.color.width, ensurePositive(_config.width, 640));
+        meta.colorIntrinsics.height = ensurePositive(_config.color.height, ensurePositive(_config.height, 480));
+        meta.colorFps = ensurePositive(_config.color.frameRate, ensurePositive(_config.frameRate, 30));
+        return meta;
+    }
+
+private:
+    Logger &_logger;
+    CameraConfig _config;
+    cv::VideoCapture _capture;
+    bool _running{false};
+    std::string _label;
 };
 } // namespace
 
@@ -492,6 +598,8 @@ std::unique_ptr<CameraInterface> createCamera(const CameraConfig &config, Logger
         return std::make_unique<SimulatedCamera>("RGB", logger);
     if (config.type == "Network")
         return std::make_unique<NetworkDevice>(logger);
+    if (config.type == "Webcam")
+        return std::make_unique<WebcamCamera>(logger);
     logger.warn("Unknown camera type '%s', defaulting to RGB", config.type.c_str());
     return std::make_unique<SimulatedCamera>("RGB", logger);
 }

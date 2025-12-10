@@ -11,8 +11,8 @@ set(CMAKE_AUTORCC ON)
 
 find_package(OpenCV REQUIRED)
 
-find_package(Qt5 COMPONENTS Widgets Core Network Multimedia Concurrent REQUIRED)
-set(QT_LIBS Qt5::Widgets Qt5::Core Qt5::Network Qt5::Multimedia Qt5::Concurrent)
+find_package(Qt5 COMPONENTS Widgets Core Network Multimedia MultimediaWidgets Concurrent REQUIRED)
+set(QT_LIBS Qt5::Widgets Qt5::Core Qt5::Network Qt5::Multimedia Qt5::MultimediaWidgets Qt5::Concurrent)
 
 find_path(REALSENSE2_INCLUDE_DIR librealsense2/rs.hpp
     PATHS /usr/include /usr/local/include

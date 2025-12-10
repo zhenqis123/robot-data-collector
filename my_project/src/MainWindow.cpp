@@ -26,6 +26,11 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QMediaPlayer>
+#include <QVideoWidget>
+#include <QUrl>
+#include <QFileInfo>
+#include <QFile>
 
 #include <algorithm>
 #include <set>
@@ -98,7 +103,7 @@ void MainWindow::setupUi()
     rootLayout->setSpacing(16);
 
     _controlPanel = new QWidget(central);
-    _controlPanel->setMinimumWidth(380);
+    _controlPanel->setMinimumWidth(400);
     auto *controlsLayout = new QVBoxLayout(_controlPanel);
     controlsLayout->setSpacing(12);
     controlsLayout->addWidget(createMetadataGroup());
@@ -111,7 +116,12 @@ void MainWindow::setupUi()
     controlsLayout->addWidget(createStatusGroup());
     controlsLayout->addStretch();
 
-    rootLayout->addWidget(_controlPanel, 0);
+    auto *controlsScroll = new QScrollArea(central);
+    controlsScroll->setWidgetResizable(true);
+    controlsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    controlsScroll->setWidget(_controlPanel);
+    controlsScroll->setMinimumWidth(_controlPanel->minimumWidth() + 24);
+    rootLayout->addWidget(controlsScroll, 0);
 
     _scrollArea = new QScrollArea(this);
     _scrollArea->setWidgetResizable(true);
@@ -357,10 +367,10 @@ QGroupBox *MainWindow::createVlmGroup()
 {
     auto *box = new QGroupBox(tr("VLM Generation"), _controlPanel);
     auto *layout = new QFormLayout(box);
-    layout->setRowWrapPolicy(QFormLayout::WrapAllRows);
-    layout->setVerticalSpacing(10);
-    box->setMinimumHeight(200);
-    box->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+    layout->setRowWrapPolicy(QFormLayout::DontWrapRows);
+    layout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    layout->setVerticalSpacing(12);
+    layout->setContentsMargins(10, 12, 10, 12);
 
     _vlmEndpointEdit = new QLineEdit();
     _vlmEndpointEdit->setReadOnly(true);
@@ -377,6 +387,7 @@ QGroupBox *MainWindow::createVlmGroup()
     layout->addRow(tr("API Key"), _vlmApiKeyEdit);
     layout->addRow(tr("Input Camera"), _vlmCameraSelect);
     layout->addRow(_vlmGenerateButton);
+    box->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     _vlmGroup = box;
     return box;
 }
@@ -757,43 +768,21 @@ bool MainWindow::validateTaskTemplate(const TaskTemplate &task, QString &errorMe
         errorMessage = tr("task.id is empty");
         return false;
     }
-    // Require subtasks with steps (VLM template)
-    if (task.task.subtasks.empty())
+    // At minimum require steps present either directly or within subtasks.
+    bool hasSteps = !task.task.steps.empty();
+    for (const auto &sub : task.task.subtasks)
+        hasSteps = hasSteps || !sub.steps.empty();
+    if (!hasSteps)
     {
-        errorMessage = tr("task.subtasks is empty");
+        errorMessage = tr("no steps defined");
         return false;
     }
-    if (_promptLanguage == PromptLanguage::Chinese)
-    {
-        if (task.task.spokenPromptCn.empty())
-        {
-            errorMessage = tr("task spoken_prompt_cn is empty for Chinese prompts");
-            return false;
-        }
-    }
-    for (const auto &obj : task.sceneObjects)
-    {
-        if (obj.objectId.empty() || obj.name.empty() || obj.category.empty())
-        {
-            errorMessage = tr("scene.objects missing fields");
-            return false;
-        }
-    }
+    // Basic integrity: ids/descriptions for any provided steps/subtasks.
     for (const auto &sub : task.task.subtasks)
     {
         if (sub.id.empty() || sub.description.empty())
         {
             errorMessage = tr("subtask missing id or description");
-            return false;
-        }
-        if (sub.steps.empty())
-        {
-            errorMessage = tr("subtask steps is empty");
-            return false;
-        }
-        if (_promptLanguage == PromptLanguage::Chinese && sub.spokenPromptCn.empty())
-        {
-            errorMessage = tr("subtask spoken_prompt_cn is empty for Chinese prompts");
             return false;
         }
         for (const auto &step : sub.steps)
@@ -803,11 +792,14 @@ bool MainWindow::validateTaskTemplate(const TaskTemplate &task, QString &errorMe
                 errorMessage = tr("step missing id or description");
                 return false;
             }
-            if (_promptLanguage == PromptLanguage::Chinese && step.spokenPromptCn.empty())
-            {
-                errorMessage = tr("step spoken_prompt_cn is empty for Chinese prompts");
-                return false;
-            }
+        }
+    }
+    for (const auto &step : task.task.steps)
+    {
+        if (step.id.empty() || step.description.empty())
+        {
+            errorMessage = tr("step missing id or description");
+            return false;
         }
     }
     errorMessage.clear();
@@ -866,11 +858,48 @@ void MainWindow::showCurrentTaskDialog()
         stepObj["involved_objects"] = sInvolved;
         steps.push_back(stepObj);
     }
+
+    json subtasks = json::array();
+    for (const auto &st : _currentTask->task.subtasks)
+    {
+        json stObj = {{"id", st.id}, {"description", st.description}};
+        json stInvolved = json::array();
+        for (const auto &io : st.involvedObjects)
+        {
+            stInvolved.push_back({
+                {"object_id", io.objectId},
+                {"name", io.name},
+                {"role", io.role},
+                {"optional", io.optional}
+            });
+        }
+        stObj["involved_objects"] = stInvolved;
+        json stSteps = json::array();
+        for (const auto &s : st.steps)
+        {
+            json stepObj = {{"id", s.id}, {"description", s.description}};
+            json sInvolved = json::array();
+            for (const auto &io : s.involvedObjects)
+            {
+                sInvolved.push_back({
+                    {"object_id", io.objectId},
+                    {"name", io.name},
+                    {"role", io.role},
+                    {"optional", io.optional}
+                });
+            }
+            stepObj["involved_objects"] = sInvolved;
+            stSteps.push_back(stepObj);
+        }
+        stObj["steps"] = stSteps;
+        subtasks.push_back(stObj);
+    }
     j["task"] = {
         {"id", _currentTask->task.id},
         {"description", _currentTask->task.description},
         {"involved_objects", involved},
-        {"steps", steps}
+        {"steps", steps},
+        {"subtasks", subtasks}
     };
     j["constraints"] = {{"notes", _currentTask->constraintsNotes}};
     j["source_path"] = _currentTask->sourcePath;
@@ -1088,6 +1117,31 @@ std::string MainWindow::getStepDescriptionById(const std::string &stepId, const 
     {
         if (s.id == stepId)
             return s.description;
+    }
+    return {};
+}
+
+std::string MainWindow::getStepVideoPathById(const std::string &stepId, const std::string &subtaskId) const
+{
+    if (!_currentTask || stepId.empty())
+        return {};
+    if (!subtaskId.empty())
+    {
+        for (const auto &st : _currentTask->task.subtasks)
+        {
+            if (st.id != subtaskId)
+                continue;
+            for (const auto &s : st.steps)
+            {
+                if (s.id == stepId && !s.videoPath.empty())
+                    return s.videoPath;
+            }
+        }
+    }
+    for (const auto &s : _currentTask->task.steps)
+    {
+        if (s.id == stepId && !s.videoPath.empty())
+            return s.videoPath;
     }
     return {};
 }
@@ -1380,6 +1434,8 @@ void MainWindow::onStartRecording()
         logAnnotation("start_recording");
         _statusLabel->setText("Recording...");
         _audioPlayer.play("start", _currentTask->task.id, "", "", makeStartPromptText());
+        if (t.current.has_value())
+            updatePromptWindowMedia(t.current->subtaskId, t.current->stepId);
         updateTaskStatusUi();
     }
     updateControls();
@@ -1396,6 +1452,7 @@ void MainWindow::onStopRecording()
         logAnnotation("stop_recording");
         _capture->stopRecording();
         _statusLabel->setText("Recording stopped");
+        stopPromptVideo();
         if (wasCompleted)
             _audioPlayer.play("stop_completed");
         else
@@ -1455,15 +1512,21 @@ void MainWindow::onAdvanceStep()
             _audioPlayer.play("next_step", _currentTask->task.id, "", "", subDescCn);
         else
             _audioPlayer.play("next_step", _currentTask->task.id, "", "", subDesc.empty() ? fallback : subDesc);
+        if (t.current.has_value())
+            updatePromptWindowMedia(t.current->subtaskId, t.current->stepId);
     }
     else if (t.subtaskStarted && t.current.has_value())
     {
         _audioPlayer.play("next_step", _currentTask->task.id, t.current->stepId, "", makeNextStepPromptText(t.current->stepId, t.current->subtaskId));
+        updatePromptWindowMedia(t.current->subtaskId, t.current->stepId);
     }
     else if (t.current.has_value())
     {
         _audioPlayer.play("next_step", _currentTask->task.id, t.current->stepId, "", makeNextStepPromptText(t.current->stepId, t.current->subtaskId));
+        updatePromptWindowMedia(t.current->subtaskId, t.current->stepId);
     }
+    if (t.taskCompleted)
+        stopPromptVideo();
     logAnnotation("button_step");
     updateTaskStatusUi();
 }
@@ -1746,19 +1809,68 @@ void MainWindow::onApplyCameraSettings()
 
 void MainWindow::onShowParticipantPrompt()
 {
-    if (!_promptWindow)
+    ensurePromptWindow();
+    if (_promptWindow && !_promptWindow->isVisible())
     {
-        _promptWindow = new QDialog(this);
-        _promptWindow->setWindowTitle(tr("Participant Prompt"));
-        _promptWindow->setMinimumSize(400, 200);
-        auto *layout = new QVBoxLayout(_promptWindow);
-        auto *label = new QLabel(tr("This window will show instructions to participants."), _promptWindow);
-        label->setAlignment(Qt::AlignCenter);
-        layout->addWidget(label);
+        if (auto id = _taskMachine.currentStepId(); id.has_value())
+            updatePromptWindowMedia(_taskMachine.currentSubtaskId().value_or(""), *id);
     }
     _promptWindow->show();
     _promptWindow->raise();
     _promptWindow->activateWindow();
+}
+
+void MainWindow::ensurePromptWindow()
+{
+    if (_promptWindow)
+        return;
+    _promptWindow = new QDialog(this);
+    _promptWindow->setWindowTitle(tr("Participant Prompt"));
+    _promptWindow->setMinimumSize(520, 360);
+    auto *layout = new QVBoxLayout(_promptWindow);
+    _promptStepLabel = new QLabel(tr("No task selected."), _promptWindow);
+    _promptStepLabel->setWordWrap(true);
+    layout->addWidget(_promptStepLabel);
+    _promptVideoWidget = new QVideoWidget(_promptWindow);
+    _promptVideoWidget->setMinimumSize(480, 270);
+    layout->addWidget(_promptVideoWidget);
+    _promptPlayer = new QMediaPlayer(_promptWindow);
+    _promptPlayer->setVideoOutput(_promptVideoWidget);
+}
+
+void MainWindow::stopPromptVideo()
+{
+    if (_promptPlayer)
+        _promptPlayer->stop();
+    if (_promptVideoWidget)
+        _promptVideoWidget->hide();
+}
+
+void MainWindow::updatePromptWindowMedia(const std::string &subtaskId, const std::string &stepId)
+{
+    if (stepId.empty() || !_currentTask)
+        return;
+    ensurePromptWindow();
+    const auto desc = getStepDescriptionById(stepId, subtaskId);
+    if (_promptStepLabel)
+        _promptStepLabel->setText(QString::fromStdString(desc.empty() ? stepId : desc));
+    const auto path = getStepVideoPathById(stepId, subtaskId);
+    if (path.empty() || !QFile::exists(QString::fromStdString(path)))
+    {
+        stopPromptVideo();
+        return;
+    }
+    if (_promptVideoWidget)
+        _promptVideoWidget->show();
+    if (_promptPlayer)
+    {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        _promptPlayer->setSource(QUrl::fromLocalFile(QString::fromStdString(path)));
+#else
+        _promptPlayer->setMedia(QUrl::fromLocalFile(QString::fromStdString(path)));
+#endif
+        _promptPlayer->play();
+    }
 }
 
 #include "MainWindow.moc"
