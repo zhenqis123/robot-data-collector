@@ -1,0 +1,248 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "kitchen_fruit_basket_cycle_01",
+    "name": "Fruit basket setup",
+    "name_cn": "果篮制作场景",
+    "description": "A table with an empty fruit basket and scattered fruits (apple, jackfruit, orange, peach)",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "apple",
+        "category": "fruit",
+        "state": {
+          "placement": "on_table",
+          "relative": "scattered"
+        }
+      },
+      {
+        "object_id": "obj_2",
+        "name": "jackfruit_piece",
+        "category": "fruit",
+        "state": {
+          "placement": "on_table",
+          "relative": "scattered"
+        }
+      },
+      {
+        "object_id": "obj_3",
+        "name": "orange",
+        "category": "fruit",
+        "state": {
+          "placement": "on_table",
+          "relative": "scattered"
+        }
+      },
+      {
+        "object_id": "obj_4",
+        "name": "peach",
+        "category": "fruit",
+        "state": {
+          "placement": "on_table",
+          "relative": "scattered"
+        }
+      },
+      {
+        "object_id": "obj_5",
+        "name": "fruit_basket",
+        "category": "container",
+        "state": {
+          "placement": "on_table",
+          "relative": "center, empty"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_fruit_basket_cycle",
+    "name": "Assemble and disassemble fruit basket",
+    "name_cn": "制作果篮并还原",
+    "description": "Place fruits into the basket and then return them to their original positions",
+    "spoken_prompt": "Task: We will practice arranging items. The goal is to put the fruits into the basket and then put them back on the table.",
+    "spoken_prompt_cn": "任务描述：我们要练习物品整理。目标是将水果放入篮子，然后再放回桌面上。",
+    "subtasks": [
+      {
+        "id": "st_basket_cycle_flow",
+        "description": "Execute the sequence of filling and emptying the basket",
+        "spoken_prompt": "Subtask: Please place the fruits into the basket one by one, and then take them out.",
+        "spoken_prompt_cn": "子任务描述：请将水果逐个放入篮子，然后再逐个取出来放回原位。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "apple",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_2",
+            "name": "jackfruit_piece",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_3",
+            "name": "orange",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_4",
+            "name": "peach",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_5",
+            "name": "fruit_basket",
+            "role": "container"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Place the jackfruit into the basket",
+            "spoken_prompt": "Step one: pick up the jackfruit piece and place it in the basket.",
+            "spoken_prompt_cn": "第一步：拿起菠萝蜜，把它放入篮子里。",
+            "involved_objects": [
+              {
+                "object_id": "obj_2",
+                "name": "jackfruit_piece",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_5",
+                "name": "fruit_basket",
+                "role": "target_container"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Place the orange into the basket",
+            "spoken_prompt": "Step two: pick up the orange and place it in the basket.",
+            "spoken_prompt_cn": "第二步：拿起橙子，把它放入篮子里。",
+            "involved_objects": [
+              {
+                "object_id": "obj_3",
+                "name": "orange",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_5",
+                "name": "fruit_basket",
+                "role": "target_container"
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "description": "Place the apple into the basket",
+            "spoken_prompt": "Step three: pick up the apple and place it in the basket.",
+            "spoken_prompt_cn": "第三步：拿起苹果，把它放入篮子里。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "apple",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_5",
+                "name": "fruit_basket",
+                "role": "target_container"
+              }
+            ]
+          },
+          {
+            "id": "s4",
+            "description": "Place the peach on top",
+            "spoken_prompt": "Step four: pick up the peach and place it on top.",
+            "spoken_prompt_cn": "第四步：拿起桃子，把它放在最上面。",
+            "involved_objects": [
+              {
+                "object_id": "obj_4",
+                "name": "peach",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_5",
+                "name": "fruit_basket",
+                "role": "target_container"
+              }
+            ]
+          },
+          {
+            "id": "s5",
+            "description": "Take the peach out and return it to the table",
+            "spoken_prompt": "Step five: take the peach out and put it back on the table.",
+            "spoken_prompt_cn": "第五步：把桃子拿出来，放回桌上原位。",
+            "involved_objects": [
+              {
+                "object_id": "obj_4",
+                "name": "peach",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_5",
+                "name": "fruit_basket",
+                "role": "source"
+              }
+            ]
+          },
+          {
+            "id": "s6",
+            "description": "Take the apple out and return it to the table",
+            "spoken_prompt": "Step six: take the apple out and put it back on the table.",
+            "spoken_prompt_cn": "第六步：把苹果拿出来，放回桌上原位。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "apple",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_5",
+                "name": "fruit_basket",
+                "role": "source"
+              }
+            ]
+          },
+          {
+            "id": "s7",
+            "description": "Take the orange out and return it to the table",
+            "spoken_prompt": "Step seven: take the orange out and put it back on the table.",
+            "spoken_prompt_cn": "第七步：把橙子拿出来，放回桌上原位。",
+            "involved_objects": [
+              {
+                "object_id": "obj_3",
+                "name": "orange",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_5",
+                "name": "fruit_basket",
+                "role": "source"
+              }
+            ]
+          },
+          {
+            "id": "s8",
+            "description": "Take the jackfruit out and return it to the table",
+            "spoken_prompt": "Step eight: take the jackfruit out and put it back on the table.",
+            "spoken_prompt_cn": "第八步：把菠萝蜜拿出来，放回桌上原位。",
+            "involved_objects": [
+              {
+                "object_id": "obj_2",
+                "name": "jackfruit_piece",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_5",
+                "name": "fruit_basket",
+                "role": "source"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Handle fruits gently; ensure they are returned to their approximate starting positions on the table."
+  }
+}

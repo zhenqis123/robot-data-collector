@@ -2,6 +2,8 @@
   "schema_version": "1.1",
   "scene": {
     "scene_id": "desk_three_cups_01",
+    "name": "Desk with three cups",
+    "name_cn": "三杯桌面场景",
     "description": "A desk surface with three disposable cups placed side-by-side in a row.",
     "objects": [
       {
@@ -35,6 +37,8 @@
   },
   "task": {
     "id": "t_stack_and_unstack_cups",
+    "name": "Stack and unstack cups",
+    "name_cn": "杯子叠放与分离",
     "description": "Stack the three disposable cups together and then separate them back into three individual cups.",
     "spoken_prompt": "Task started: we will stack the three cups and then separate them again.",
     "spoken_prompt_cn": "任务开始：我们将把三个杯子叠在一起，然后再将它们分开。",

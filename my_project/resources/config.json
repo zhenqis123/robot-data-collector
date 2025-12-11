@@ -12,15 +12,17 @@
     "language": "chinese",
     "volume": 100,
     "index_tts": {
-      "endpoint": "http://192.168.20.173:6006/tts_url",
+      "endpoint": "http://127.0.0.1:6006/tts_url",
       "audio_paths": ["/home/xiziheng/develop/data_collector/index-tts-vllm/assets/jay_promptvn.wav"]
     },
     "texts": {
       "start": "录制开始。任务{task_id}，步骤{step_id}：{step_desc}。",
+      "step_start": "步骤开始。",
       "next_step": "下一步 {step_id}：{step_desc}。",
+      "step_end": "当前步骤完成。",
       "complete": "本轮任务已完成，返回开头继续。",
-      "abort": "任务已中止。",
-      "error": "记录异常。",
+      "pause": "录制已暂停。",
+      "resume": "录制已继续。",
       "skip": "已跳过当前步骤。",
       "retry": "正在重试当前步骤。",
       "stop_running": "录制已停止，任务中断。",
@@ -29,11 +31,11 @@
       "vlm_fail": "任务生成失败，请重试。"
     },
     "keybindings": {
-      "advance": "S",
+      "step_start": "S",
+      "step_end": "D",
+      "pause_toggle": "Space",
       "retry": "R",
-      "skip": "K",
-      "error": "E",
-      "abort": "A"
+      "skip": "K"
     }
   },
   "cameras": [

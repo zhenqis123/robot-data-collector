@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "office_desk_typing_01",
+    "name": "Typing setup",
+    "name_cn": "打字场景",
+    "description": "A desk with a keyboard and monitor",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "keyboard",
+        "category": "electronics",
+        "state": {
+          "placement": "on_desk",
+          "relative": "center, in front of monitor"
+        }
+      },
+      {
+        "object_id": "obj_2",
+        "name": "monitor",
+        "category": "electronics",
+        "state": {
+          "placement": "on_desk",
+          "relative": "behind keyboard"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_typing_simple",
+    "name": "Type on keyboard",
+    "name_cn": "键盘打字",
+    "description": "Perform typing actions on the keyboard",
+    "spoken_prompt": "Task: We will practice typing. The goal is to type on the keyboard.",
+    "spoken_prompt_cn": "任务描述：我们要进行打字练习。目标是在键盘上打字。",
+    "subtasks": [
+      {
+        "id": "st_typing_action",
+        "description": "Execute the typing action",
+        "spoken_prompt": "Subtask: Please type on the keyboard.",
+        "spoken_prompt_cn": "子任务描述：请在键盘上进行打字。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "keyboard",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_2",
+            "name": "monitor",
+            "role": "reference"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Type freely on the keyboard",
+            "spoken_prompt": "Step one: place your hands on the keyboard and type.",
+            "spoken_prompt_cn": "第一步：双手放在键盘上，开始打字。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "keyboard",
+                "role": "manipulated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Simulate natural typing movements with both hands."
+  }
+}

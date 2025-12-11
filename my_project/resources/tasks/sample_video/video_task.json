@@ -2,11 +2,15 @@
   "schema_version": "1.0",
   "scene": {
     "scene_id": "sample_video_scene",
+    "name": "Sample video scene",
+    "name_cn": "视频演示场景",
     "description": "Sample scene for testing prompt video playback",
     "objects": []
   },
   "task": {
     "id": "sample_video_task",
+    "name": "Sample video task",
+    "name_cn": "视频演示任务",
     "description": "Simple two-step task with per-step demo videos",
     "involved_objects": [],
     "steps": [

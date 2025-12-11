@@ -1,0 +1,143 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_blue_blocks_01",
+    "name": "Blue blocks setup",
+    "name_cn": "蓝色方块场景",
+    "description": "A table with three blue wooden blocks scattered horizontally",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "blue_block_base",
+        "category": "block",
+        "state": {
+          "placement": "on_table",
+          "relative": "left side, blue"
+        }
+      },
+      {
+        "object_id": "obj_2",
+        "name": "blue_block_middle",
+        "category": "block",
+        "state": {
+          "placement": "on_table",
+          "relative": "center, blue"
+        }
+      },
+      {
+        "object_id": "obj_3",
+        "name": "blue_block_top",
+        "category": "block",
+        "state": {
+          "placement": "on_table",
+          "relative": "right side, blue"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_stack_unstack_blue_blocks",
+    "name": "Stack and unstack blue blocks",
+    "name_cn": "叠蓝色方块并还原",
+    "description": "Stack three blocks into a tower and then return them to their original positions",
+    "spoken_prompt": "Task: We will practice stacking. The goal is to stack the blue blocks into a tower, and then unstack them back to their original positions.",
+    "spoken_prompt_cn": "任务描述：我们要进行叠方块任务。目标是将蓝色方块叠成塔，然后把它们拆开，放回原位。",
+    "subtasks": [
+      {
+        "id": "st_stack_sequence",
+        "description": "Execute the stacking and unstacking sequence",
+        "spoken_prompt": "Subtask: Please stack the blocks and then put them back.",
+        "spoken_prompt_cn": "子任务描述：请执行叠方块和还原的流程。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "blue_block_base",
+            "role": "base"
+          },
+          {
+            "object_id": "obj_2",
+            "name": "blue_block_middle",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_3",
+            "name": "blue_block_top",
+            "role": "manipulated"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Place the middle block onto the left block",
+            "spoken_prompt": "Step one: pick up the middle block and place it on top of the left block.",
+            "spoken_prompt_cn": "第一步：拿起中间的方块，把它叠在左边的方块上。",
+            "involved_objects": [
+              {
+                "object_id": "obj_2",
+                "name": "blue_block_middle",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_1",
+                "name": "blue_block_base",
+                "role": "target_base"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Place the right block onto the stack",
+            "spoken_prompt": "Step two: pick up the right block and place it on top of the stack.",
+            "spoken_prompt_cn": "第二步：拿起右边的方块，把它叠在刚才的方块堆顶端。",
+            "involved_objects": [
+              {
+                "object_id": "obj_3",
+                "name": "blue_block_top",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_2",
+                "name": "blue_block_middle",
+                "role": "target_base"
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "description": "Remove the top block and return it to the right side",
+            "spoken_prompt": "Step three: take the top block and place it back on the right side.",
+            "spoken_prompt_cn": "第三步：拿起最上面的方块，把它放回右边原位。",
+            "involved_objects": [
+              {
+                "object_id": "obj_3",
+                "name": "blue_block_top",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s4",
+            "description": "Remove the remaining block and return it to the center",
+            "spoken_prompt": "Step four: take the remaining block and place it back in the center.",
+            "spoken_prompt_cn": "第四步：拿起剩下的那个方块，把它放回中间原位。",
+            "involved_objects": [
+              {
+                "object_id": "obj_2",
+                "name": "blue_block_middle",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_1",
+                "name": "blue_block_base",
+                "role": "reference"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Ensure the stack is stable before unstacking; blocks must be returned to their approximate original locations."
+  }
+}

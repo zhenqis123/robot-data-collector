@@ -43,6 +43,7 @@
 #include <nlohmann/json.hpp>
 #include <cstdlib>
 #include <opencv2/imgcodecs.hpp>
+#include <unordered_map>
 
 using json = nlohmann::json;
 
@@ -165,11 +166,10 @@ void MainWindow::updateControls()
     _pauseButton->setEnabled(hasCapture && recording && !paused);
     _resumeButton->setEnabled(hasCapture && recording && paused);
     const bool taskActive = recording;
-    _advanceButton->setEnabled(hasCapture); // allow step to start recording path
+    _startStepButton->setEnabled(hasCapture);
+    _endStepButton->setEnabled(recording);
     _retryButton->setEnabled(taskActive);
     _skipButton->setEnabled(taskActive);
-    _errorButton->setEnabled(taskActive);
-    _abortButton->setEnabled(taskActive);
     if (_vlmCameraSelect)
     {
         _vlmCameraSelect->clear();
@@ -309,11 +309,10 @@ void MainWindow::connectSignals()
     connect(_stopCaptureButton, &QPushButton::clicked, this, &MainWindow::onStopRecording);
     connect(_pauseButton, &QPushButton::clicked, this, &MainWindow::onPauseRecording);
     connect(_resumeButton, &QPushButton::clicked, this, &MainWindow::onResumeRecording);
-    connect(_advanceButton, &QPushButton::clicked, this, &MainWindow::onAdvanceStep);
+    connect(_startStepButton, &QPushButton::clicked, this, &MainWindow::onStartStep);
+    connect(_endStepButton, &QPushButton::clicked, this, &MainWindow::onEndStep);
     connect(_retryButton, &QPushButton::clicked, this, &MainWindow::onRetryStep);
     connect(_skipButton, &QPushButton::clicked, this, &MainWindow::onSkipStep);
-    connect(_errorButton, &QPushButton::clicked, this, &MainWindow::onErrorStep);
-    connect(_abortButton, &QPushButton::clicked, this, &MainWindow::onAbortTask);
     connect(_cameraSelect, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onCameraSelectionChanged);
     connect(_applySettingsButton, &QPushButton::clicked, this, &MainWindow::onApplyCameraSettings);
@@ -414,20 +413,18 @@ QGroupBox *MainWindow::createCaptureControlGroup()
     _stopCaptureButton = new QPushButton(tr("停止 / Stop"));
     _pauseButton = new QPushButton(tr("暂停 / Pause"));
     _resumeButton = new QPushButton(tr("继续 / Resume"));
-    _advanceButton = new QPushButton(tr("下一步 / Step"));
-    _errorButton = new QPushButton(tr("异常 / Error"));
+    _startStepButton = new QPushButton(tr("开始步骤 / Start Step"));
+    _endStepButton = new QPushButton(tr("结束步骤 / End Step"));
     _skipButton = new QPushButton(tr("跳过 / Skip"));
     _retryButton = new QPushButton(tr("重试 / Retry"));
-    _abortButton = new QPushButton(tr("中止 / Abort"));
     grid->addWidget(_startCaptureButton, 0, 0);
     grid->addWidget(_stopCaptureButton, 0, 1);
     grid->addWidget(_pauseButton, 1, 0);
     grid->addWidget(_resumeButton, 1, 1);
-    grid->addWidget(_advanceButton, 2, 0);
-    grid->addWidget(_retryButton, 2, 1);
-    grid->addWidget(_skipButton, 3, 0);
-    grid->addWidget(_errorButton, 3, 1);
-    grid->addWidget(_abortButton, 4, 0, 1, 2);
+    grid->addWidget(_startStepButton, 2, 0);
+    grid->addWidget(_endStepButton, 2, 1);
+    grid->addWidget(_retryButton, 3, 0);
+    grid->addWidget(_skipButton, 3, 1);
     return box;
 }
 
@@ -510,13 +507,53 @@ void MainWindow::populateSceneList()
     _sceneSelect->addItem(tr("选择场景 / Select Scene"), QString());
     _taskSelect->addItem(tr("选择任务 / Select Task"), QString());
 
-    std::set<std::string> sceneIds;
-    for (const auto &t : _taskTemplates)
-        sceneIds.insert(t.sceneId);
-
-    for (const auto &scene : sceneIds)
+    std::vector<std::pair<std::string, SceneMeta>> scenes;
+    if (!_taskLoader.sceneMetadata().empty())
     {
-        _sceneSelect->addItem(QString::fromStdString(scene), QString::fromStdString(scene));
+        for (const auto &p : _taskLoader.sceneMetadata())
+            scenes.push_back(p);
+    }
+    else
+    {
+        std::set<std::string> sceneIds;
+        for (const auto &t : _taskTemplates)
+            sceneIds.insert(t.sceneFolder.empty() ? t.sceneId : t.sceneFolder);
+        for (const auto &id : sceneIds)
+            scenes.push_back({id, SceneMeta{id, id, "", ""}});
+    }
+
+    auto makeLabel = [](const std::string &cn, const std::string &en, const std::string &fallback) {
+        if (!cn.empty() && !en.empty())
+            return QString::fromStdString(cn + " / " + en);
+        if (!cn.empty())
+            return QString::fromStdString(cn);
+        if (!en.empty())
+            return QString::fromStdString(en);
+        return QString::fromStdString(fallback);
+    };
+
+    for (const auto &scene : scenes)
+    {
+        std::string nameEn;
+        std::string nameCn;
+        if (!scene.second.name.empty() || !scene.second.nameCn.empty())
+        {
+            nameEn = scene.second.name.empty() ? scene.second.description : scene.second.name;
+            nameCn = scene.second.nameCn;
+        }
+        else
+        {
+            for (const auto &t : _taskTemplates)
+            {
+                if ((t.sceneFolder.empty() ? t.sceneId : t.sceneFolder) == scene.first)
+                {
+                    nameEn = t.sceneName.empty() ? t.sceneDescription : t.sceneName;
+                    nameCn = t.sceneNameCn;
+                    break;
+                }
+            }
+        }
+        _sceneSelect->addItem(makeLabel(nameCn, nameEn, scene.first), QString::fromStdString(scene.first));
     }
     _sceneSelect->blockSignals(false);
     _taskSelect->blockSignals(false);
@@ -527,11 +564,23 @@ void MainWindow::populateTaskList(const std::string &sceneId)
     _taskSelect->blockSignals(true);
     _taskSelect->clear();
     _taskSelect->addItem(tr("选择任务 / Select Task"), QString());
+    auto makeLabel = [](const std::string &cn, const std::string &en, const std::string &fallback) {
+        if (!cn.empty() && !en.empty())
+            return QString::fromStdString(cn + " / " + en);
+        if (!cn.empty())
+            return QString::fromStdString(cn);
+        if (!en.empty())
+            return QString::fromStdString(en);
+        return QString::fromStdString(fallback);
+    };
     for (const auto &t : _taskTemplates)
     {
-        if (t.sceneId == sceneId)
+        const auto folder = t.sceneFolder.empty() ? t.sceneId : t.sceneFolder;
+        if (folder == sceneId)
         {
-            QString label = QString::fromStdString(t.task.id);
+            std::string nameEn = t.task.name.empty() ? t.task.description : t.task.name;
+            std::string nameCn = t.task.nameCn;
+            QString label = makeLabel(nameCn, nameEn, t.task.id);
             _taskSelect->addItem(label, QString::fromStdString(t.task.id));
         }
     }
@@ -540,8 +589,7 @@ void MainWindow::populateTaskList(const std::string &sceneId)
 
 void MainWindow::onSceneSelectionChanged(int index)
 {
-    Q_UNUSED(index);
-    const auto sceneId = _sceneSelect->currentData().toString().toStdString();
+    const auto sceneId = _sceneSelect->itemData(index).toString().toStdString();
     populateTaskList(sceneId);
     _currentTask.reset();
     _taskMachine.reset();
@@ -550,13 +598,13 @@ void MainWindow::onSceneSelectionChanged(int index)
 
 void MainWindow::onTaskSelectionChanged(int index)
 {
-    Q_UNUSED(index);
-    const auto sceneId = _sceneSelect->currentData().toString().toStdString();
-    const auto taskId = _taskSelect->currentData().toString().toStdString();
+    const auto sceneId = _sceneSelect->itemData(_sceneSelect->currentIndex()).toString().toStdString();
+    const auto taskId = _taskSelect->itemData(index).toString().toStdString();
     _currentTask.reset();
     for (const auto &t : _taskTemplates)
     {
-        if (t.sceneId == sceneId && t.task.id == taskId)
+        const auto folder = t.sceneFolder.empty() ? t.sceneId : t.sceneFolder;
+        if (folder == sceneId && t.task.id == taskId)
         {
             setCurrentTask(t, "script");
             break;
@@ -730,15 +778,31 @@ void MainWindow::setCurrentTask(const TaskTemplate &task, const std::string &sou
             texts.push_back(st.spokenPrompt.empty() ? st.description : st.spokenPrompt);
     }
     // static prompts
-    texts.push_back(_audioPlayer.renderText("abort", task.task.id, "", "", ""));
     texts.push_back(_audioPlayer.renderText("retry", task.task.id, "", "", ""));
     texts.push_back(_audioPlayer.renderText("skip", task.task.id, "", "", ""));
-    texts.push_back(_audioPlayer.renderText("error", task.task.id, "", "", ""));
     texts.push_back(_audioPlayer.renderText("stop_completed", task.task.id, "", "", ""));
     texts.push_back(_audioPlayer.renderText("stop_running", task.task.id, "", "", ""));
     texts.push_back(_audioPlayer.renderText("vlm_success", task.task.id, "", "", ""));
     texts.push_back(_audioPlayer.renderText("vlm_fail", task.task.id, "", "", ""));
+    texts.push_back(_audioPlayer.renderText("step_end", task.task.id, "", "", ""));
+    texts.push_back(_audioPlayer.renderText("step_start", task.task.id, "", "", ""));
+    texts.push_back(_audioPlayer.renderText("pause", task.task.id, "", "", ""));
+    texts.push_back(_audioPlayer.renderText("resume", task.task.id, "", "", ""));
     _audioPlayer.preloadTexts(texts);
+}
+
+bool MainWindow::throttleTrigger(const std::string &action, int ms)
+{
+    const auto now = std::chrono::steady_clock::now();
+    auto it = _lastTrigger.find(action);
+    if (it != _lastTrigger.end())
+    {
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - it->second).count();
+        if (elapsed < ms)
+            return true;
+    }
+    _lastTrigger[action] = now;
+    return false;
 }
 
 bool MainWindow::validateTaskTemplate(const TaskTemplate &task, QString &errorMessage) const
@@ -1299,16 +1363,36 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
         return k != 0 && event->key() == k;
     };
 
-    if (matchKey("advance"))
-        onAdvanceStep();
-    else if (matchKey("error"))
-        onErrorStep();
+    if (matchKey("step_start"))
+    {
+        if (!throttleTrigger("step_start", 300))
+            onStartStep();
+    }
+    else if (matchKey("step_end") || matchKey("advance"))
+    {
+        if (!throttleTrigger("step_end", 300))
+            onEndStep();
+    }
+    else if (matchKey("pause_toggle"))
+    {
+        if (!throttleTrigger("pause_toggle", 300) && _capture && _capture->isRecording())
+        {
+            if (_capture->isPaused())
+                onResumeRecording();
+            else
+                onPauseRecording();
+        }
+    }
     else if (matchKey("skip"))
-        onSkipStep();
+    {
+        if (!throttleTrigger("skip", 300))
+            onSkipStep();
+    }
     else if (matchKey("retry"))
-        onRetryStep();
-    else if (matchKey("abort"))
-        onAbortTask();
+    {
+        if (!throttleTrigger("retry", 300))
+            onRetryStep();
+    }
     QMainWindow::keyPressEvent(event);
 }
 
@@ -1451,6 +1535,7 @@ void MainWindow::onStopRecording()
             _audioPlayer.play("stop_completed");
         else
             _audioPlayer.play("stop_running");
+        _activeStepTiming.reset();
         updateTaskStatusUi();
     }
     updateControls();
@@ -1460,8 +1545,10 @@ void MainWindow::onPauseRecording()
 {
     if (_capture)
     {
+        _storage.logEvent("pause_recording");
         _capture->pauseRecording();
         _statusLabel->setText(tr("录制已暂停 / Recording paused"));
+        _audioPlayer.play("pause");
         updateTaskStatusUi();
     }
     updateControls();
@@ -1471,58 +1558,158 @@ void MainWindow::onResumeRecording()
 {
     if (_capture)
     {
+        _storage.logEvent("resume_recording");
         _capture->resumeRecording();
         _statusLabel->setText(tr("录制继续 / Recording resumed"));
+        _audioPlayer.play("resume");
         updateTaskStatusUi();
     }
     updateControls();
 }
 
-void MainWindow::onAdvanceStep()
+void MainWindow::onStartStep()
 {
     if (!_capture || !_currentTask)
     {
-        QMessageBox::warning(this, tr("前进 / Advance"), tr("请先开始录制并选择任务 / Please start recording and select a task first."));
+        QMessageBox::warning(this, tr("开始步骤 / Start Step"), tr("请先开始录制并选择任务 / Please start recording and select a task first."));
         return;
     }
     if (!_capture->isRecording())
     {
         onStartRecording();
-        return; // avoid double-advancing immediately after starting
+        if (!_capture || !_capture->isRecording())
+            return;
     }
-    _storage.logEvent("step_trigger");
-    auto t = _taskMachine.advance();
-    if (t.taskCompleted)
+    const auto prevState = _taskMachine.state();
+    auto t = _taskMachine.startStep();
+    const auto currentStep = _taskMachine.currentStepId();
+    const auto currentSubtask = _taskMachine.currentSubtaskId();
+
+    if ((prevState == TaskStateMachine::State::Ready || prevState == TaskStateMachine::State::Completed) && t.state == TaskStateMachine::State::SubtaskReady)
     {
-        _audioPlayer.play("complete", _currentTask->task.id, "", "", makeCompletePromptText());
-    }
-    else if (t.state == TaskStateMachine::State::SubtaskReady && !t.subtaskStarted)
-    {
-        const auto subId = t.current ? t.current->subtaskId : "";
+        const auto subId = t.current ? t.current->subtaskId : currentSubtask.value_or("");
         const auto subDescCn = getSubtaskSpokenPromptCnById(subId);
         const auto subDesc = getSubtaskSpokenPromptById(subId);
         const auto fallback = getSubtaskDescriptionById(subId);
-        if (useChinesePrompts() && !subDescCn.empty())
-            _audioPlayer.play("next_step", _currentTask->task.id, "", "", subDescCn);
-        else
-            _audioPlayer.play("next_step", _currentTask->task.id, "", "", subDesc.empty() ? fallback : subDesc);
+        const auto text = (useChinesePrompts() && !subDescCn.empty()) ? subDescCn : (subDesc.empty() ? fallback : subDesc);
+        if (!text.empty())
+            _audioPlayer.play("next_step", _currentTask->task.id, "", "", text);
+        if (t.current.has_value())
+            updatePromptWindowMedia(t.current->subtaskId, t.current->stepId);
+        updateTaskStatusUi();
+        updateControls();
+        return;
+    }
+
+    if ((prevState == TaskStateMachine::State::SubtaskReady || prevState == TaskStateMachine::State::Completed) &&
+        t.state == TaskStateMachine::State::Running)
+    {
+        if (t.current.has_value())
+        {
+            const auto stepText = makeNextStepPromptText(t.current->stepId, t.current->subtaskId);
+            if (!stepText.empty())
+                _audioPlayer.play("next_step", _currentTask->task.id, t.current->stepId, "", stepText);
+            updatePromptWindowMedia(t.current->subtaskId, t.current->stepId);
+        }
+        updateTaskStatusUi();
+        updateControls();
+        return;
+    }
+
+    // Running: mark step start (with optional short cue once)
+    if (t.state == TaskStateMachine::State::Running && currentStep.has_value())
+    {
+        // 每次点击都重置计时，并播放步骤开始提示
+        _activeStepTiming = StepTiming{currentSubtask.value_or(""), *currentStep, nowMs()};
+        _storage.logEvent("step_start");
+        logAnnotation("step_start");
+        auto shortText = _audioPlayer.renderText("step_start", _currentTask->task.id, *currentStep, "", "");
+        if (shortText.empty())
+            shortText = "步骤开始";
+        _audioPlayer.play("step_start", _currentTask->task.id, *currentStep, "", shortText);
+        updatePromptWindowMedia(currentSubtask.value_or(""), *currentStep);
+    }
+    updateTaskStatusUi();
+    updateControls();
+}
+
+void MainWindow::onEndStep()
+{
+    if (!_capture || !_currentTask)
+    {
+        QMessageBox::warning(this, tr("结束步骤 / End Step"), tr("请先开始录制并选择任务 / Please start recording and select a task first."));
+        return;
+    }
+    if (!_capture->isRecording())
+    {
+        QMessageBox::warning(this, tr("结束步骤 / End Step"), tr("当前未录制，无法结束步骤 / Recording is not active."));
+        return;
+    }
+    const auto currentStep = _taskMachine.currentStepId();
+    const auto currentSubtask = _taskMachine.currentSubtaskId();
+    if (!currentStep.has_value())
+    {
+        QMessageBox::warning(this, tr("结束步骤 / End Step"), tr("没有当前步骤可结束 / No active step."));
+        return;
+    }
+    if (!_activeStepTiming.has_value())
+    {
+        QMessageBox::warning(this, tr("结束步骤 / End Step"), tr("请先开始当前步骤，再结束它 / Please start the current step before ending it."));
+        return;
+    }
+    const int64_t endMs = nowMs();
+    int64_t startMs = endMs;
+    if (!_activeStepTiming.has_value() ||
+        _activeStepTiming->stepId != *currentStep ||
+        _activeStepTiming->subtaskId != currentSubtask.value_or(""))
+    {
+        QMessageBox::warning(this, tr("结束步骤 / End Step"), tr("请先开始当前步骤，再结束它 / Please start the current step before ending it."));
+        return;
+    }
+    if (_activeStepTiming.has_value() && _activeStepTiming->stepId == *currentStep &&
+        _activeStepTiming->subtaskId == currentSubtask.value_or(""))
+    {
+        startMs = _activeStepTiming->startMs;
+    }
+    std::string fullStepId = *currentStep;
+    if (currentSubtask.has_value() && !currentSubtask->empty())
+        fullStepId = currentSubtask.value() + ":" + *currentStep;
+    _storage.logEvent("step_end");
+    _storage.logStepTiming(fullStepId, startMs, endMs);
+    auto t = _taskMachine.finishStep();
+
+    std::string prompt = _audioPlayer.renderText("step_end", _currentTask->task.id, *currentStep, "", "步骤结束。");
+    if (t.state == TaskStateMachine::State::Running && t.current.has_value())
+    {
+        const auto nextText = makeNextStepPromptText(t.current->stepId, t.current->subtaskId);
+        if (!nextText.empty())
+            prompt += (prompt.empty() ? "" : " ") + nextText;
+        updatePromptWindowMedia(t.current->subtaskId, t.current->stepId);
+    }
+    else if (t.state == TaskStateMachine::State::SubtaskReady)
+    {
+        const auto subId = t.current ? t.current->subtaskId : _taskMachine.currentSubtaskId().value_or("");
+        const auto subDescCn = getSubtaskSpokenPromptCnById(subId);
+        const auto subDesc = getSubtaskSpokenPromptById(subId);
+        const auto fallback = getSubtaskDescriptionById(subId);
+        const auto subText = (useChinesePrompts() && !subDescCn.empty()) ? subDescCn : (subDesc.empty() ? fallback : subDesc);
+        if (!subText.empty())
+            prompt += (prompt.empty() ? "" : " ") + subText;
         if (t.current.has_value())
             updatePromptWindowMedia(t.current->subtaskId, t.current->stepId);
     }
-    else if (t.subtaskStarted && t.current.has_value())
+    else if (t.taskCompleted)
     {
-        _audioPlayer.play("next_step", _currentTask->task.id, t.current->stepId, "", makeNextStepPromptText(t.current->stepId, t.current->subtaskId));
-        updatePromptWindowMedia(t.current->subtaskId, t.current->stepId);
+        const auto completeText = makeCompletePromptText();
+        if (!completeText.empty())
+            prompt += (prompt.empty() ? "" : " ") + completeText;
     }
-    else if (t.current.has_value())
-    {
-        _audioPlayer.play("next_step", _currentTask->task.id, t.current->stepId, "", makeNextStepPromptText(t.current->stepId, t.current->subtaskId));
-        updatePromptWindowMedia(t.current->subtaskId, t.current->stepId);
-    }
-    if (t.taskCompleted)
-        stopPromptVideo();
-    logAnnotation("button_step");
+    if (!prompt.empty())
+        _audioPlayer.play("step_end", _currentTask->task.id, *currentStep, "", prompt);
+    logAnnotation("step_end");
+    _activeStepTiming.reset();
     updateTaskStatusUi();
+    updateControls();
 }
 
 void MainWindow::onRetryStep()
@@ -1537,23 +1724,6 @@ void MainWindow::onSkipStep()
     _storage.logEvent("step_skip");
     _audioPlayer.play("skip");
     logAnnotation("button_skip");
-}
-
-void MainWindow::onErrorStep()
-{
-    _storage.logEvent("step_error");
-    _audioPlayer.play("error");
-    logAnnotation("button_error");
-}
-
-void MainWindow::onAbortTask()
-{
-    _storage.logEvent("task_abort");
-    _taskMachine.abort();
-    _taskMachine.stop();
-    _audioPlayer.play("abort");
-    logAnnotation("button_abort");
-    updateTaskStatusUi();
 }
 
 int64_t MainWindow::nowMs() const

@@ -3,10 +3,19 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 #include <QJsonObject>
 
 class Logger;
+
+struct SceneMeta
+{
+    std::string id;
+    std::string name;
+    std::string nameCn;
+    std::string description;
+};
 
 struct SceneObject
 {
@@ -38,6 +47,8 @@ struct TaskStep
 struct TaskDefinition
 {
     std::string id;
+    std::string name;
+    std::string nameCn;
     std::string description;
     std::string spokenPrompt;
     std::string spokenPromptCn;
@@ -60,7 +71,10 @@ struct TaskTemplate
 {
     std::string schemaVersion;
     std::string sourcePath;
+    std::string sceneFolder;
     std::string sceneId;
+    std::string sceneName;
+    std::string sceneNameCn;
     std::string sceneDescription;
     std::vector<SceneObject> sceneObjects;
     TaskDefinition task;
@@ -80,11 +94,14 @@ public:
 
     // 加载根目录下所有场景的任务
     std::vector<TaskTemplate> loadAllTasks(const std::string &rootDir);
+    const std::unordered_map<std::string, SceneMeta> &sceneMetadata() const { return _sceneMeta; }
 
 private:
     Logger &_logger;
+    std::unordered_map<std::string, SceneMeta> _sceneMeta;
 
     TaskStepObject parseStepObject(const QJsonObject &obj);
     SceneObject parseSceneObject(const QJsonObject &obj);
     TaskStep parseTaskStep(const QJsonObject &obj);
+    void loadSceneMetadata(const std::string &rootDir);
 };

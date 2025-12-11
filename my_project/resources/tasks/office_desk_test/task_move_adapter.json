@@ -2,6 +2,8 @@
   "schema_version": "1.0",
   "scene": {
     "scene_id": "office_desk_01",
+    "name": "Office desk with adapter",
+    "name_cn": "办公室桌面（含适配器）",
     "description": "Office desk with a monitor, mouse, power adapter, cables, and documents on the tabletop",
     "objects": [
       {
@@ -53,6 +55,8 @@
   },
   "task": {
     "id": "t_office_desk_multi",
+    "name": "Move adapter and tidy cables",
+    "name_cn": "移动适配器并整理线缆",
     "description": "Multiple subtasks on the office desk",
     "spoken_prompt": "We will organize the office desk. Two subtasks: move the power adapter, then tidy the cables.",
     "spoken_prompt_cn": "我们要整理办公桌。两个子任务：先移动电源适配器，再整理线缆。",

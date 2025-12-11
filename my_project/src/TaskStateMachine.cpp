@@ -68,15 +68,10 @@ TaskStateMachine::Transition TaskStateMachine::beginSubtask()
     return t;
 }
 
-TaskStateMachine::Transition TaskStateMachine::advance()
+TaskStateMachine::Transition TaskStateMachine::startStep()
 {
     Transition t;
-    if (!_sessionActive || _stepStatus.empty())
-    {
-        t.state = _state;
-        return t;
-    }
-
+    _sessionActive = true;
     if (_state == State::Ready)
     {
         _state = State::SubtaskReady;
@@ -85,14 +80,55 @@ TaskStateMachine::Transition TaskStateMachine::advance()
             t.current = StepRef{currentSubtaskId().value_or(""), *cid, {}};
         return t;
     }
-
-    if (_state == State::SubtaskReady)
+    if (_state == State::Completed)
     {
-        _state = State::Running;
+        // Restart from first subtask/step
+        _currentSubtaskIndex = _task.task.subtasks.empty() ? -1 : 0;
+        _stepStatus.clear();
+        if (_currentSubtaskIndex >= 0 && _currentSubtaskIndex < static_cast<int>(_task.task.subtasks.size()))
+        {
+            for (const auto &s : _task.task.subtasks[static_cast<size_t>(_currentSubtaskIndex)].steps)
+            {
+                StepStatus st;
+                st.id = s.id;
+                _stepStatus.push_back(st);
+            }
+        }
+        else
+        {
+            for (const auto &s : _task.task.steps)
+            {
+                StepStatus st;
+                st.id = s.id;
+                _stepStatus.push_back(st);
+            }
+        }
+        _currentStepIndex = _stepStatus.empty() ? -1 : 0;
+        _state = _stepStatus.empty() ? State::Ready : State::Running;
         t.state = _state;
         if (auto cid = currentStepId(); cid.has_value())
             t.current = StepRef{currentSubtaskId().value_or(""), *cid, {}};
-        t.subtaskStarted = true;
+        return t;
+    }
+    if (_state == State::SubtaskReady)
+    {
+        return beginSubtask();
+    }
+    // If already running, just report current
+    t.state = _state;
+    if (auto cid = currentStepId(); cid.has_value())
+    {
+        t.current = StepRef{currentSubtaskId().value_or(""), *cid, {}};
+    }
+    return t;
+}
+
+TaskStateMachine::Transition TaskStateMachine::finishStep()
+{
+    Transition t;
+    if (!_sessionActive || _stepStatus.empty())
+    {
+        t.state = _state;
         return t;
     }
 
@@ -124,17 +160,25 @@ TaskStateMachine::Transition TaskStateMachine::advance()
                     }
                 }
                 if (lastSubtask)
+                {
                     t.taskCompleted = true;
-                _currentStepIndex = _stepStatus.empty() ? -1 : 0;
-                // Go back to Ready so the next advance enters SubtaskReady, ensuring subtask intro is played
-                _state = State::Ready;
+                    _state = State::Completed;
+                    _currentSubtaskIndex = -1;
+                    _stepStatus.clear();
+                    _currentStepIndex = -1;
+                }
+                else
+                {
+                    _currentStepIndex = _stepStatus.empty() ? -1 : 0;
+                    _state = State::SubtaskReady;
+                }
             }
             else
             {
-                // Single-task (no subtasks) loops steps
+                // Single-task (no subtasks)
                 t.taskCompleted = true;
-                _currentStepIndex = _stepStatus.empty() ? -1 : 0;
-                _state = State::Ready;
+                _currentStepIndex = -1;
+                _state = State::Completed;
             }
         }
     }
