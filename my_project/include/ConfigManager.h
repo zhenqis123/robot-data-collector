@@ -17,7 +17,8 @@ struct AudioPromptsConfig
 {
     bool enabled{false};
     float volume{1.0f};
-    std::string mode{"piper"};
+    std::string mode{"index_tts"};
+    std::string language{"chinese"};
     std::unordered_map<std::string, std::string> keybindings;
     struct IndexTts
     {
