@@ -10,6 +10,7 @@
 
 #include <memory>
 #include <sstream>
+#include <iomanip>
 
 #include <opencv2/aruco.hpp>
 #include <opencv2/imgproc.hpp>
@@ -26,6 +27,16 @@ std::unique_ptr<QLabel> makeDisplayLabel()
     label->setStyleSheet("background-color: #222; color: #fff; border: 1px solid #444;");
     label->setAlignment(Qt::AlignCenter);
     label->setText("Waiting...");
+    return label;
+}
+
+std::unique_ptr<QLabel> makeTextDataLabel()
+{
+    auto label = std::make_unique<QLabel>();
+    label->setMinimumSize(320, 40); // Much smaller height
+    label->setStyleSheet("background-color: #111; color: #0f0; border: 1px solid #333; font-family: Monospace;");
+    label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    label->setText("Waiting for data...");
     return label;
 }
 } // namespace
@@ -52,30 +63,47 @@ void Preview::registerCameraView(const std::string &cameraId, const std::string 
 
     auto group = new QGroupBox(QString::fromStdString(cameraId));
     auto boxLayout = new QVBoxLayout(group);
-    auto streamLayout = new QHBoxLayout();
+    
+    // Check if it's a text-only device
+    bool isTextOnly = (type == "VDGlove" || type == "Vive" || type == "ViveTracker");
 
-    auto colorLabel = makeDisplayLabel();
-    auto colorContainer = new QWidget();
-    colorContainer->setLayout(new QVBoxLayout());
-    colorContainer->layout()->setContentsMargins(0, 0, 0, 0);
-    colorContainer->layout()->addWidget(colorLabel.get());
-    streamLayout->addWidget(colorContainer, 1);
+    View view;
+    view.container = group;
+    view.isTextOnly = isTextOnly;
 
-    QLabel *depthLabelRaw = nullptr;
-    bool showDepth = (type == "RealSense");
-    if (showDepth)
-    {
-        auto depthLabel = makeDisplayLabel();
-        depthLabelRaw = depthLabel.get();
-        depthLabel->setText("Depth");
-        auto depthContainer = new QWidget();
-        depthContainer->setLayout(new QVBoxLayout());
-        depthContainer->layout()->setContentsMargins(0, 0, 0, 0);
-        depthContainer->layout()->addWidget(depthLabel.release());
-        streamLayout->addWidget(depthContainer, 1);
+    if (isTextOnly) {
+        auto dataLabel = makeTextDataLabel();
+        view.dataLabel = dataLabel.get();
+        boxLayout->addWidget(dataLabel.release());
+    } else {
+        auto streamLayout = new QHBoxLayout();
+
+        auto colorLabel = makeDisplayLabel();
+        auto colorContainer = new QWidget();
+        colorContainer->setLayout(new QVBoxLayout());
+        colorContainer->layout()->setContentsMargins(0, 0, 0, 0);
+        colorContainer->layout()->addWidget(colorLabel.get());
+        streamLayout->addWidget(colorContainer, 1);
+
+        QLabel *depthLabelRaw = nullptr;
+        bool showDepth = (type == "RealSense");
+        if (showDepth)
+        {
+            auto depthLabel = makeDisplayLabel();
+            depthLabelRaw = depthLabel.get();
+            depthLabel->setText("Depth");
+            auto depthContainer = new QWidget();
+            depthContainer->setLayout(new QVBoxLayout());
+            depthContainer->layout()->setContentsMargins(0, 0, 0, 0);
+            depthContainer->layout()->addWidget(depthLabel.release());
+            streamLayout->addWidget(depthContainer, 1);
+        }
+
+        boxLayout->addLayout(streamLayout);
+        view.colorLabel = colorLabel.release();
+        view.depthLabel = depthLabelRaw;
+        view.showDepth = showDepth;
     }
-
-    boxLayout->addLayout(streamLayout);
 
     auto infoLabel = new QLabel("Capture: 0.0 fps | Display: 0.0 fps | Write: 0.0 fps");
     infoLabel->setStyleSheet("color: #f0f0f0; background-color: rgba(0,0,0,0.5); font-size: 12px; padding: 2px 6px;");
@@ -83,11 +111,6 @@ void Preview::registerCameraView(const std::string &cameraId, const std::string 
     boxLayout->addWidget(infoLabel, 0, Qt::AlignBottom | Qt::AlignLeft);
     _devicesLayout->addWidget(group);
 
-    View view;
-    view.colorLabel = colorLabel.release();
-    view.depthLabel = depthLabelRaw;
-    view.showDepth = showDepth;
-    view.container = group;
     view.infoLabel = infoLabel;
     view.infoBaseText = infoLabel->text().toStdString();
     _views.emplace(cameraId, view);
@@ -127,75 +150,98 @@ void Preview::showFrame(const FrameData &frame)
     auto &view = it->second;
     std::string arucoInfo;
 
-    if (view.colorLabel && !frame.image.empty())
-    {
-        const cv::Mat *source = &frame.image;
-        cv::Mat overlayMat;
-        if (_arucoTracker)
-        {
-            auto detections = _arucoTracker->getLatestDetections(frame.cameraId);
-            if (!detections.empty())
-            {
-                overlayMat = frame.image.clone();
-                std::vector<int> ids;
-                std::vector<std::vector<cv::Point2f>> corners;
-                for (const auto &det : detections)
-                {
-                    ids.push_back(det.markerId);
-                    corners.push_back(det.corners);
-                }
-
-                // Draw thicker borders and clear labels for visibility.
-                for (size_t i = 0; i < corners.size(); ++i)
-                {
-                    const auto &c = corners[i];
-                    if (c.size() == 4)
-                    {
-                        for (int k = 0; k < 4; ++k)
-                        {
-                            cv::line(overlayMat, c[k], c[(k + 1) % 4], cv::Scalar(0, 255, 0), 3);
-                        }
-                        cv::putText(overlayMat, std::to_string(ids[i]), c[0] + cv::Point2f(0, -6),
-                                    cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 0), 3);
-                        cv::putText(overlayMat, std::to_string(ids[i]), c[0] + cv::Point2f(0, -6),
-                                    cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 255, 0), 2);
-                    }
-                }
-                cv::aruco::drawDetectedMarkers(overlayMat, corners, ids, cv::Scalar(0, 255, 0));
-                source = &overlayMat;
-
-                std::ostringstream ss;
-                ss << "ArUco " << detections.size() << " ids: ";
-                for (size_t i = 0; i < detections.size(); ++i)
-                {
-                    ss << detections[i].markerId;
-                    if (i + 1 < detections.size())
-                        ss << ",";
-                }
-                arucoInfo = ss.str();
-            }
+    // Handle Text-Only Devices (VDGlove / Vive)
+    if (view.isTextOnly && view.dataLabel) {
+        if (frame.gloveData) {
+            std::ostringstream ss;
+            ss << "Left: " << (frame.gloveData->left_hand.detected ? "Detected" : "None")
+               << " | Right: " << (frame.gloveData->right_hand.detected ? "Detected" : "None")
+               << " | TS: " << frame.deviceTimestampMs;
+            
+            QMetaObject::invokeMethod(view.dataLabel, [lbl=view.dataLabel, text=ss.str()]() {
+                lbl->setText(QString::fromStdString(text));
+            });
         }
-        auto image = matToQImage(*source);
-        dispatchToLabel(view.colorLabel, image);
+        else if (frame.viveData) {
+            std::ostringstream ss;
+            ss << "Trackers: ";
+            for(size_t i=0; i<frame.viveData->trackers.size(); ++i) {
+                ss << "#" << i << (frame.viveData->trackers[i].valid ? "[OK]" : "[NO]") << " ";
+            }
+             QMetaObject::invokeMethod(view.dataLabel, [lbl=view.dataLabel, text=ss.str()]() {
+                lbl->setText(QString::fromStdString(text));
+            });
+        }
     }
+    else {
+        // Standard Camera Display Logic
+        if (view.colorLabel && !frame.image.empty())
+        {
+            const cv::Mat *source = &frame.image;
+            cv::Mat overlayMat;
+            if (_arucoTracker)
+            {
+                auto detections = _arucoTracker->getLatestDetections(frame.cameraId);
+                if (!detections.empty())
+                {
+                    overlayMat = frame.image.clone();
+                    std::vector<int> ids;
+                    std::vector<std::vector<cv::Point2f>> corners;
+                    for (const auto &det : detections)
+                    {
+                        ids.push_back(det.markerId);
+                        corners.push_back(det.corners);
+                    }
 
-    if (view.showDepth && view.depthLabel && !frame.depth.empty())
-    {
-        auto image = depthToQImage(frame.depth);
-        dispatchToLabel(view.depthLabel, image);
+                    for (size_t i = 0; i < corners.size(); ++i)
+                    {
+                        const auto &c = corners[i];
+                        if (c.size() == 4)
+                        {
+                            for (int k = 0; k < 4; ++k)
+                            {
+                                cv::line(overlayMat, c[k], c[(k + 1) % 4], cv::Scalar(0, 255, 0), 3);
+                            }
+                            cv::putText(overlayMat, std::to_string(ids[i]), c[0] + cv::Point2f(0, -6),
+                                        cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 0), 3);
+                            cv::putText(overlayMat, std::to_string(ids[i]), c[0] + cv::Point2f(0, -6),
+                                        cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 255, 0), 2);
+                        }
+                    }
+                    cv::aruco::drawDetectedMarkers(overlayMat, corners, ids, cv::Scalar(0, 255, 0));
+                    source = &overlayMat;
+
+                    std::ostringstream ss;
+                    ss << "ArUco " << detections.size() << " ids: ";
+                    for (size_t i = 0; i < detections.size(); ++i)
+                    {
+                        ss << detections[i].markerId;
+                        if (i + 1 < detections.size())
+                            ss << ",";
+                    }
+                    arucoInfo = ss.str();
+                }
+            }
+            auto image = matToQImage(*source);
+            dispatchToLabel(view.colorLabel, image);
+        }
+
+        if (view.showDepth && view.depthLabel && !frame.depth.empty())
+        {
+            auto image = depthToQImage(frame.depth);
+            dispatchToLabel(view.depthLabel, image);
+        }
     }
 
     _latestFrames[frame.cameraId] = frame;
 
     if (!arucoInfo.empty() && view.infoLabel)
     {
-        // Append ArUco info to the FPS label for this device.
         view.lastArucoText = "ArUco: " + arucoInfo;
         renderInfo(view);
     }
     else
     {
-        // Ensure the status label stays focused on FPS when no detection exists.
         updateStatus("Displaying " + frame.cameraId);
     }
 }
@@ -272,7 +318,6 @@ void Preview::renderInfo(View &view)
     std::string combined = view.infoBaseText;
     if (!view.lastArucoText.empty())
         combined += " | " + view.lastArucoText;
-    // Avoid unnecessary UI updates to reduce flicker.
     if (view.infoLabel->text().toStdString() == combined)
         return;
     auto label = view.infoLabel;

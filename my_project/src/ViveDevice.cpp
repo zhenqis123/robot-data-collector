@@ -1,6 +1,7 @@
 #include "ViveInterface.h"
 #include <thread>
 #include <mutex>
+#include <condition_variable>
 #include <atomic>
 #include <iostream>
 #include <cstring>
@@ -82,6 +83,19 @@ public:
         if (config.extraSettings.count("port")) {
             _config.port = std::stoi(config.extraSettings.at("port"));
         }
+        
+        // Rate limiting
+        _targetFps = 0.0;
+        if (config.extraSettings.count("target_fps")) {
+            _targetFps = std::stod(config.extraSettings.at("target_fps"));
+        }
+        if (_targetFps > 0.0) {
+            _minFrameInterval = 1.0 / _targetFps;
+            _logger.info("Vive: Target FPS set to %.1f (Interval: %.3fs)", _targetFps, _minFrameInterval);
+        } else {
+            _minFrameInterval = 0.0;
+        }
+
         return initializeInternal();
     }
 
@@ -130,6 +144,7 @@ public:
     FrameData captureFrame() override {
         FrameData frame;
         frame.viveData = captureViveData();
+        // If timed out or empty, timestamp might be old.
         frame.timestamp = frame.viveData->host_timestamp;
         // Use system clock as device timestamp if no better option, or python timestamp cast to ms
         frame.deviceTimestampMs = static_cast<int64_t>(frame.viveData->python_timestamp * 1000); 
@@ -142,12 +157,20 @@ public:
     }
 
     ViveFrameData captureViveData() override {
-        std::lock_guard<std::mutex> lock(_dataMutex);
+        std::unique_lock<std::mutex> lock(_dataMutex);
+        // Block wait
+        _frameCv.wait(lock, [this]{ return _newFrameReady || !_running; });
+        
+        if (!_running) return {};
+
+        _newFrameReady = false;
         return _currentFrame;
     }
 
     void close() override {
         _running = false;
+        _frameCv.notify_all(); // Wake up waiter
+
         if (_sockfd >= 0) {
             // shutdown 可以确保中断读写操作，比直接 close 更安全
             shutdown(_sockfd, SHUT_RDWR); 
@@ -163,6 +186,14 @@ public:
 
     std::string name() const override { return "ViveTrackerDevice"; }
 
+    CaptureMetadata captureMetadata() const override {
+        CaptureMetadata meta;
+        meta.deviceId = "ViveTracker";
+        meta.model = "ViveTracker";
+        meta.aligned = false;
+        return meta;
+    }
+
 private:
     Logger& _logger;
     ViveConfig _config;
@@ -171,7 +202,14 @@ private:
     std::atomic<bool> _running{false};
     
     std::mutex _dataMutex;
+    std::condition_variable _frameCv;
+    bool _newFrameReady{false};
     ViveFrameData _currentFrame;
+
+    // FPS Control
+    double _targetFps{0.0};
+    double _minFrameInterval{0.0};
+    std::chrono::steady_clock::time_point _lastFrameTime;
 
     // 解析逻辑：将 12个 float 转换为 Rotation 和 Position
     ViveTrackerPose parseSingleTracker(const float* raw_data) {
@@ -215,6 +253,20 @@ private:
             int n = recvfrom(_sockfd, &packet, sizeof(ViveRawPacket), 0, (struct sockaddr *)&cliaddr, &len);
             
             if (n == sizeof(ViveRawPacket)) {
+                 // Check rate limit
+                bool shouldProcess = true;
+                if (_minFrameInterval > 0.0) {
+                    auto now = std::chrono::steady_clock::now();
+                    double elapsed = std::chrono::duration<double>(now - _lastFrameTime).count();
+                    if (elapsed < _minFrameInterval) {
+                        shouldProcess = false;
+                    } else {
+                        _lastFrameTime = now;
+                    }
+                }
+
+                if (!shouldProcess) continue;
+
                 // 解析数据
                 ViveFrameData frame;
                 frame.python_timestamp = packet.timestamp; // 直接读取 double
@@ -231,7 +283,10 @@ private:
                 {
                     std::lock_guard<std::mutex> lock(_dataMutex);
                     _currentFrame = frame;
+                    _newFrameReady = true;
                 }
+                _frameCv.notify_one();
+
             } else if (n < 0) {
                 // 如果是超时 (EAGAIN / EWOULDBLOCK)，说明只是没数据，继续循环检查 _running 即可
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {

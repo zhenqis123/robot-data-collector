@@ -21,6 +21,7 @@ DataCapture::DataCapture(std::vector<DeviceSpec> devices,
     {
         auto ctx = std::make_unique<DeviceContext>();
         ctx->device = std::move(spec.device);
+        ctx->type = spec.type;
         if (ctx->device)
         {
             auto cameraId = ctx->device->name();
@@ -64,7 +65,8 @@ bool DataCapture::start()
         auto *ctx = ctxPtr.get();
         ctx->storageRunning = true;
         ctx->displayRunning = true;
-        ctx->writer = ctx->device ? ctx->device->makeWriter(_storage.basePath(), _logger) : nullptr;
+        // Writer is created on startRecording, not here.
+        ctx->writer = nullptr;
         ctx->captureThread = std::thread(&DataCapture::captureLoop, this, ctx);
         ctx->displayThread = std::thread(&DataCapture::displayLoop, this, ctx);
         ctx->storageThread = std::thread(&DataCapture::storageLoop, this, ctx);
@@ -105,14 +107,17 @@ void DataCapture::stop()
     for (auto &ctxPtr : _devices)
     {
         auto *ctx = ctxPtr.get();
+        // Close device first to interrupt any blocking capture calls
+        if (ctx->device)
+            ctx->device->close();
+
         if (ctx->captureThread.joinable())
             ctx->captureThread.join();
         if (ctx->displayThread.joinable())
             ctx->displayThread.join();
         if (ctx->storageThread.joinable())
             ctx->storageThread.join();
-        if (ctx->device)
-            ctx->device->close();
+        
         ctx->writer.reset();
     }
 }
@@ -122,7 +127,9 @@ void DataCapture::captureLoop(DeviceContext *ctx)
     while (_running.load())
     {
         FrameData frame = ctx->device->captureFrame();
-        if (frame.image.empty())
+        const bool hasImage = !frame.image.empty();
+        // Allow frames with glove or vive data even if image is empty
+        if (!hasImage && !frame.gloveData.has_value() && !frame.viveData.has_value())
             continue;
         frame.cameraId = ctx->device->name();
         auto stats = ctx->stats;
@@ -136,31 +143,48 @@ void DataCapture::captureLoop(DeviceContext *ctx)
         {
             enqueueForStorage(ctx, frame);
         }
-        if (_arucoTracker)
+        if (_arucoTracker && hasImage)
             _arucoTracker->submit(frame);
     }
 }
 
 void DataCapture::startRecording(const std::string &captureName,
                                  const std::string &subject,
-                                 const std::string &basePath)
+                                 const std::string &basePath,
+                                 const std::unordered_set<std::string> &recordTypes)
 {
     if (!_running.load())
         return;
     for (auto &ctxPtr : _devices)
         ctxPtr->dropWarned = false;
+    
     std::vector<CaptureMetadata> metas;
-    metas.reserve(_devices.size());
+    // Only include metadata for devices we are actually recording
     for (const auto &ctxPtr : _devices)
     {
         if (ctxPtr->device)
-            metas.push_back(ctxPtr->device->captureMetadata());
+        {
+            bool shouldRecord = recordTypes.empty() || recordTypes.count(ctxPtr->type);
+            if (shouldRecord) {
+                metas.push_back(ctxPtr->device->captureMetadata());
+            }
+        }
     }
+    
     _storage.beginRecording(captureName, subject, basePath, metas);
+    
     for (auto &ctxPtr : _devices)
     {
         if (ctxPtr->device)
-            ctxPtr->writer = ctxPtr->device->makeWriter(_storage.basePath(), _logger);
+        {
+            bool shouldRecord = recordTypes.empty() || recordTypes.count(ctxPtr->type);
+            if (shouldRecord) {
+                ctxPtr->writer = ctxPtr->device->makeWriter(_storage.basePath(), _logger);
+            } else {
+                ctxPtr->writer = nullptr;
+                _logger.info("Skipping recording for device %s (type: %s)", ctxPtr->device->name().c_str(), ctxPtr->type.c_str());
+            }
+        }
     }
     _recording = true;
     _paused = false;
@@ -173,6 +197,12 @@ void DataCapture::stopRecording()
     _paused = false;
     _storage.endRecording();
     _logger.info("Recording stopped");
+    
+    // Clean up writers
+    for (auto &ctxPtr : _devices)
+    {
+        ctxPtr->writer.reset();
+    }
 }
 
 void DataCapture::pauseRecording()
@@ -193,6 +223,10 @@ void DataCapture::resumeRecording()
 
 void DataCapture::enqueueForStorage(DeviceContext *ctx, const FrameData &frame)
 {
+    // If no writer is configured (e.g. recording disabled for this device), skip queuing
+    if (!ctx->writer)
+        return;
+
     std::unique_lock<std::mutex> lock(ctx->storageMutex);
     if (ctx->storageQueue.size() >= _maxStorageQueue)
     {

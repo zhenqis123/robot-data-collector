@@ -34,6 +34,7 @@ class QGroupBox;
 class QDialog;
 class QMediaPlayer;
 class QVideoWidget;
+class QCheckBox;
 
 class MainWindow : public QMainWindow
 {
@@ -123,6 +124,12 @@ private:
     QPushButton *_viewTaskButton{nullptr};
     QComboBox *_audioEngineSelect{nullptr};
     AudioPromptsConfig _audioConfig;
+    
+    // Aux Controls
+    QCheckBox *_chkConnectGlove{nullptr};
+    QCheckBox *_chkSaveGlove{nullptr};
+    QCheckBox *_chkConnectVive{nullptr};
+    QCheckBox *_chkSaveVive{nullptr};
 
     std::vector<TaskTemplate> _taskTemplates;
     std::optional<TaskTemplate> _currentTask;
@@ -150,6 +157,7 @@ private:
     QGroupBox *createPromptControlGroup();
     QGroupBox *createCameraSettingsGroup();
     QGroupBox *createStatusGroup();
+    QGroupBox *createAuxDeviceGroup();
     void loadTaskTemplates();
     void populateSceneList();
     void populateTaskList(const std::string &sceneId);
@@ -193,4 +201,3 @@ private:
     QComboBox *_promptLanguageSelect{nullptr};
     bool useChinesePrompts() const;
 };
-#include "ArucoTracker.h"

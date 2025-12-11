@@ -31,6 +31,7 @@
 #include <QUrl>
 #include <QFileInfo>
 #include <QFile>
+#include <QCheckBox>
 
 #include <algorithm>
 #include <set>
@@ -110,6 +111,7 @@ void MainWindow::setupUi()
     controlsLayout->addWidget(createTaskSelectionGroup());
     controlsLayout->addWidget(createVlmGroup());
     controlsLayout->addWidget(createCameraControlGroup());
+    controlsLayout->addWidget(createAuxDeviceGroup());
     controlsLayout->addWidget(createCaptureControlGroup());
     controlsLayout->addWidget(createPromptControlGroup());
     controlsLayout->addWidget(createCameraSettingsGroup());
@@ -167,6 +169,15 @@ void MainWindow::updateControls()
     _skipButton->setEnabled(taskActive);
     _errorButton->setEnabled(taskActive);
     _abortButton->setEnabled(taskActive);
+    
+    // Aux controls: disable connect toggle while running
+    _chkConnectGlove->setEnabled(!hasCapture);
+    _chkConnectVive->setEnabled(!hasCapture);
+    // Save toggle can be changed anytime? Or only before recording?
+    // Let's allow changing save status only when not recording to avoid confusion
+    _chkSaveGlove->setEnabled(!recording);
+    _chkSaveVive->setEnabled(!recording);
+
     if (_vlmCameraSelect)
     {
         _vlmCameraSelect->clear();
@@ -400,6 +411,29 @@ QGroupBox *MainWindow::createCameraControlGroup()
     _closeButton = new QPushButton("Close");
     layout->addWidget(_openButton);
     layout->addWidget(_closeButton);
+    return box;
+}
+
+QGroupBox *MainWindow::createAuxDeviceGroup()
+{
+    auto *box = new QGroupBox(tr("Auxiliary Devices"), _controlPanel);
+    auto *layout = new QGridLayout(box);
+
+    _chkConnectGlove = new QCheckBox("VDGlove");
+    _chkConnectGlove->setChecked(true);
+    _chkSaveGlove = new QCheckBox("Save");
+    _chkSaveGlove->setChecked(true);
+
+    _chkConnectVive = new QCheckBox("Vive");
+    _chkConnectVive->setChecked(true);
+    _chkSaveVive = new QCheckBox("Save");
+    _chkSaveVive->setChecked(true);
+
+    layout->addWidget(_chkConnectGlove, 0, 0);
+    layout->addWidget(_chkSaveGlove, 0, 1);
+    layout->addWidget(_chkConnectVive, 1, 0);
+    layout->addWidget(_chkSaveVive, 1, 1);
+
     return box;
 }
 
@@ -1344,6 +1378,14 @@ void MainWindow::onOpenCameras()
     std::vector<DeviceSpec> devices;
     for (auto &cfg : configs)
     {
+        // Check filtering for Aux devices
+        if (cfg.type == "VDGlove" && !_chkConnectGlove->isChecked()) {
+            continue;
+        }
+        if ((cfg.type == "Vive" || cfg.type == "ViveTracker") && !_chkConnectVive->isChecked()) {
+            continue;
+        }
+
         if (cfg.type == "RealSense" && cfg.serial.empty())
         {
             if (rsIndex < rsSerials.size())
@@ -1430,7 +1472,22 @@ void MainWindow::onStartRecording()
         _storage.setTaskSelection(_currentTask->sceneId, _currentTask->task.id,
                                   _currentTask->sourcePath, _currentTask->schemaVersion, "script");
         auto info = gatherCaptureInfo();
-        _capture->startRecording(info.name, info.subject, info.path);
+
+        // Build allowed record types based on checkboxes
+        std::unordered_set<std::string> typesToRecord;
+        // Always record base cameras (RealSense, RGB, Webcam)
+        typesToRecord.insert("RealSense");
+        typesToRecord.insert("RGB");
+        typesToRecord.insert("Webcam");
+        typesToRecord.insert("Network");
+        
+        if (_chkSaveGlove->isChecked()) typesToRecord.insert("VDGlove");
+        if (_chkSaveVive->isChecked()) {
+            typesToRecord.insert("Vive");
+            typesToRecord.insert("ViveTracker");
+        }
+
+        _capture->startRecording(info.name, info.subject, info.path, typesToRecord);
         logAnnotation("start_recording");
         _statusLabel->setText("Recording...");
         _audioPlayer.play("start", _currentTask->task.id, "", "", makeStartPromptText());
@@ -1874,4 +1931,3 @@ void MainWindow::updatePromptWindowMedia(const std::string &subtaskId, const std
 }
 
 #include "MainWindow.moc"
-#include <utility>

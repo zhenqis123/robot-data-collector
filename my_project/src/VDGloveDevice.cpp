@@ -3,6 +3,7 @@
 #include "VDSDKLoader.h"
 #include <thread>
 #include <mutex>
+#include <condition_variable>
 #include <atomic>
 #include <cstring>
 #include <chrono>
@@ -133,6 +134,19 @@ public:
         if (config.extraSettings.count("process_mano")) 
             _config.process_mano = (config.extraSettings.at("process_mano") == "true");
 
+        // Rate limiting
+        _targetFps = 0.0;
+        if (config.extraSettings.count("target_fps")) {
+            _targetFps = std::stod(config.extraSettings.at("target_fps"));
+        }
+        if (_targetFps > 0.0) {
+            _minFrameInterval = 1.0 / _targetFps;
+            _logger.info("VDGlove: Target FPS set to %.1f (Interval: %.3fs)", _targetFps, _minFrameInterval);
+        } else {
+            _minFrameInterval = 0.0;
+             _logger.info("VDGlove: No FPS limit set.");
+        }
+
         // Use original initialize logic
         return initializeInternal();
     }
@@ -190,6 +204,8 @@ public:
     FrameData captureFrame() override {
         FrameData frame;
         frame.gloveData = captureGloveData();
+        // If captureGloveData returns empty/invalid due to timeout or stop, handle it?
+        // Current implementation will return last valid or empty, let's ensure timestamp is updated only if valid
         frame.timestamp = frame.gloveData->timestamp;
         frame.deviceTimestampMs = frame.gloveData->deviceTimestampMs;
         frame.cameraId = "VDGlove"; // Virtual ID
@@ -202,12 +218,20 @@ public:
 
     VDGloveFrameData captureGloveData() override {
         auto now = std::chrono::system_clock::now();
-        if (_is_connected && std::chrono::duration_cast<std::chrono::seconds>(now - _lastPacketTime).count() > 1) {
-            _logger.warn("VDGlove: Data timeout (1s). Attempting to reconnect...");
+        if (_is_connected && std::chrono::duration_cast<std::chrono::seconds>(now - _lastPacketTime).count() > 2) {
+            _logger.warn("VDGlove: Data timeout (>2s). Attempting to reconnect...");
             reconnect();
         }
 
-        std::lock_guard<std::mutex> lock(_dataMutex);
+        std::unique_lock<std::mutex> lock(_dataMutex);
+        // Block until new frame arrives or stop requested
+        _frameCv.wait(lock, [this]{ return _newFrameReady || !_running; });
+
+        if (!_running) {
+            return {};
+        }
+
+        _newFrameReady = false; // Consume the frame
         return _currentFrame;
     }
 
@@ -217,6 +241,7 @@ public:
         _logger.info("VDGlove: Closing...");
         
         _running = false;
+        _frameCv.notify_all(); // Wake up any waiting capture threads
 
         if (_sdk.UdpClose) {
             _logger.info("VDGlove: Calling SDK UdpClose...");
@@ -234,6 +259,14 @@ public:
 
     std::string name() const override { return "VDGloveDevice"; }
 
+    CaptureMetadata captureMetadata() const override {
+        CaptureMetadata meta;
+        meta.deviceId = "VDGlove";
+        meta.model = "VirtualGlove";
+        meta.aligned = false;
+        return meta;
+    }
+
 private:
     Logger& _logger;
     VDGloveConfig _config;
@@ -242,7 +275,14 @@ private:
     std::thread _receiverThread;
     std::atomic<bool> _running{true};
     std::mutex _dataMutex;
+    std::condition_variable _frameCv;
+    bool _newFrameReady{false};
     VDGloveFrameData _currentFrame;
+    
+    // FPS Control
+    double _targetFps{0.0};
+    double _minFrameInterval{0.0};
+    std::chrono::steady_clock::time_point _lastFrameTime;
 
     void receiveLoop() {
         MocapData raw_data;
@@ -266,7 +306,23 @@ private:
 
             if (res && raw_data.isUpdate) {
                 _lastPacketTime = std::chrono::system_clock::now();
-                processRawData(raw_data);
+                
+                // Rate Limiting Logic
+                bool shouldProcess = true;
+                if (_minFrameInterval > 0.0) {
+                    auto now = std::chrono::steady_clock::now();
+                    double elapsed = std::chrono::duration<double>(now - _lastFrameTime).count();
+                    if (elapsed < _minFrameInterval) {
+                        shouldProcess = false;
+                    } else {
+                        _lastFrameTime = now;
+                    }
+                }
+
+                if (shouldProcess) {
+                    processRawData(raw_data);
+                }
+                // If not processed, we just drop it effectively
             } else {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
@@ -351,8 +407,12 @@ private:
             }
         }
 
-        std::lock_guard<std::mutex> lock(_dataMutex);
-        _currentFrame = frame;
+        {
+            std::lock_guard<std::mutex> lock(_dataMutex);
+            _currentFrame = frame;
+            _newFrameReady = true;
+        }
+        _frameCv.notify_one();
     }
 };
 
