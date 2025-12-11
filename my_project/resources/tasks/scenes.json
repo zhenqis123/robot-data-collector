@@ -1,0 +1,20 @@
+[
+  {
+    "id": "office_desk_test",
+    "name": "office_desk_test",
+    "name_cn": "办公室桌面测试",
+    "description": "Desk tasks: cups, fruits, papers, adapter."
+  },
+  {
+    "id": "office_desk_formal",
+    "name": "office_desk_formal",
+    "name_cn": "办公室桌面正式版",
+    "description": "Formal office desk tasks (cups, writing, pouring, blocks)."
+  },
+  {
+    "id": "sample_video",
+    "name": "sample_video",
+    "name_cn": "视频示例",
+    "description": "Sample scene for testing prompt video playback."
+  }
+]

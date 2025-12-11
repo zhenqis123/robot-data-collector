@@ -24,6 +24,40 @@ TaskLoader::TaskLoader(Logger &logger)
 {
 }
 
+void TaskLoader::loadSceneMetadata(const std::string &rootDir)
+{
+    _sceneMeta.clear();
+    const QString metaPath = QDir(QString::fromStdString(rootDir)).filePath("scenes.json");
+    QFile f(metaPath);
+    if (!f.exists())
+        return;
+    if (!f.open(QIODevice::ReadOnly))
+    {
+        _logger.warn("Failed to open scenes metadata: %s", metaPath.toStdString().c_str());
+        return;
+    }
+    const auto doc = QJsonDocument::fromJson(f.readAll());
+    if (!doc.isArray())
+    {
+        _logger.warn("Scenes metadata malformed (expected array): %s", metaPath.toStdString().c_str());
+        return;
+    }
+    for (const auto &entry : doc.array())
+    {
+        if (!entry.isObject())
+            continue;
+        const auto obj = entry.toObject();
+        SceneMeta meta;
+        meta.id = obj.value("id").toString().toStdString();
+        if (meta.id.empty())
+            continue;
+        meta.name = obj.value("name").toString().toStdString();
+        meta.nameCn = obj.value("name_cn").toString().toStdString();
+        meta.description = obj.value("description").toString().toStdString();
+        _sceneMeta[meta.id] = meta;
+    }
+}
+
 TaskStepObject TaskLoader::parseStepObject(const QJsonObject &obj)
 {
     TaskStepObject result;
@@ -87,6 +121,8 @@ std::optional<TaskTemplate> TaskLoader::loadTaskFile(const std::string &path)
 
     const auto sceneObj = root.value("scene").toObject();
     task.sceneId = sceneObj.value("scene_id").toString().toStdString();
+    task.sceneName = sceneObj.value("name").toString().toStdString();
+    task.sceneNameCn = sceneObj.value("name_cn").toString().toStdString();
     task.sceneDescription = sceneObj.value("description").toString().toStdString();
     const auto sceneObjects = sceneObj.value("objects").toArray();
     for (const auto &entry : sceneObjects)
@@ -97,6 +133,8 @@ std::optional<TaskTemplate> TaskLoader::loadTaskFile(const std::string &path)
 
     const auto taskObj = root.value("task").toObject();
     task.task.id = taskObj.value("id").toString().toStdString();
+    task.task.name = taskObj.value("name").toString().toStdString();
+    task.task.nameCn = taskObj.value("name_cn").toString().toStdString();
     task.task.description = taskObj.value("description").toString().toStdString();
     task.task.spokenPrompt = taskObj.value("spoken_prompt").toString().toStdString();
     task.task.spokenPromptCn = taskObj.value("spoken_prompt_cn").toString().toStdString();
@@ -167,6 +205,17 @@ std::optional<TaskTemplate> TaskLoader::loadTaskFile(const std::string &path)
     const auto constraintsObj = root.value("constraints").toObject();
     task.constraintsNotes = constraintsObj.value("notes").toString().toStdString();
 
+    auto it = _sceneMeta.find(task.sceneId);
+    if (it != _sceneMeta.end())
+    {
+        if (task.sceneName.empty())
+            task.sceneName = it->second.name;
+        if (task.sceneNameCn.empty())
+            task.sceneNameCn = it->second.nameCn;
+        if (task.sceneDescription.empty())
+            task.sceneDescription = it->second.description;
+    }
+
     if (!hasRequiredTaskFields(task))
     {
         _logger.error("Task file missing required fields: %s", path.c_str());
@@ -191,7 +240,10 @@ std::vector<TaskTemplate> TaskLoader::loadSceneTasks(const std::string &sceneDir
         const auto fullPath = dir.absoluteFilePath(fileName).toStdString();
         auto task = loadTaskFile(fullPath);
         if (task.has_value())
+        {
+            task->sceneFolder = dir.dirName().toStdString();
             tasks.push_back(*task);
+        }
     }
     return tasks;
 }
@@ -206,12 +258,25 @@ std::vector<TaskTemplate> TaskLoader::loadAllTasks(const std::string &rootDir)
         return tasks;
     }
 
-    const auto sceneDirs = root.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-    for (const auto &scene : sceneDirs)
+    loadSceneMetadata(rootDir);
+    if (!_sceneMeta.empty())
     {
-        const auto scenePath = root.absoluteFilePath(scene).toStdString();
-        const auto sceneTasks = loadSceneTasks(scenePath);
-        tasks.insert(tasks.end(), sceneTasks.begin(), sceneTasks.end());
+        for (const auto &pair : _sceneMeta)
+        {
+            const auto scenePath = root.absoluteFilePath(QString::fromStdString(pair.first)).toStdString();
+            const auto sceneTasks = loadSceneTasks(scenePath);
+            tasks.insert(tasks.end(), sceneTasks.begin(), sceneTasks.end());
+        }
+    }
+    else
+    {
+        const auto sceneDirs = root.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+        for (const auto &scene : sceneDirs)
+        {
+            const auto scenePath = root.absoluteFilePath(scene).toStdString();
+            const auto sceneTasks = loadSceneTasks(scenePath);
+            tasks.insert(tasks.end(), sceneTasks.begin(), sceneTasks.end());
+        }
     }
     return tasks;
 }

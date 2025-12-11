@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <sstream>
 
+#include <algorithm>
 #include <cctype>
 #include <filesystem>
 #include <nlohmann/json.hpp>
@@ -251,6 +252,42 @@ void DataStorage::logAnnotation(const AnnotationEntry &entry)
         j["step_overrides"] = arr;
     }
 
+    _annotationStream << j.dump() << "\n";
+    _annotationStream.flush();
+}
+
+void DataStorage::logStepTiming(const std::string &stepId, int64_t startMs, int64_t endMs)
+{
+    if (!_sessionActive)
+        return;
+    if (!_annotationStream.is_open())
+    {
+        auto path = std::filesystem::path(_basePath) / "annotations.jsonl";
+        _annotationStream.open(path.string(), std::ios::out | std::ios::app);
+    }
+    if (!_annotationStream.is_open())
+    {
+        _logger.error("Failed to open annotations file");
+        return;
+    }
+    json j;
+    j["schema_version"] = "1.0";
+    j["session_id"] = _sessionId;
+    j["source"] = _taskSource;
+    j["task_ref"] = {
+        {"scene_id", _sceneId},
+        {"task_id", _taskId},
+        {"template_path", _taskTemplatePath},
+        {"template_version", _taskTemplateVersion}
+    };
+    j["timestamp_ms"] = endMs;
+    j["state"] = "step_timing";
+    j["current_step_id"] = stepId;
+    json timing;
+    timing["start_ms"] = startMs;
+    timing["end_ms"] = endMs;
+    timing["duration_ms"] = std::max<int64_t>(0, endMs - startMs);
+    j["timing"] = timing;
     _annotationStream << j.dump() << "\n";
     _annotationStream.flush();
 }

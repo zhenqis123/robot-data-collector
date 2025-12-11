@@ -1,0 +1,143 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_cups_detailed_01",
+    "name": "Cup manipulation setup",
+    "name_cn": "杯子操作场景",
+    "description": "A table with three disposable cups arranged horizontally",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "cup_left",
+        "category": "cup",
+        "state": {
+          "placement": "on_table",
+          "relative": "left side"
+        }
+      },
+      {
+        "object_id": "obj_2",
+        "name": "cup_center",
+        "category": "cup",
+        "state": {
+          "placement": "on_table",
+          "relative": "center"
+        }
+      },
+      {
+        "object_id": "obj_3",
+        "name": "cup_right",
+        "category": "cup",
+        "state": {
+          "placement": "on_table",
+          "relative": "right side"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_stack_unstack_detailed",
+    "name": "Stack and line up cups",
+    "name_cn": "叠杯子与排开",
+    "description": "Sequentially stack cups into a column and then separate them into a line",
+    "spoken_prompt": "Task: We will practice manipulating cups. The goal is to stack the three cups one by one, and then unstack them into a line.",
+    "spoken_prompt_cn": "任务描述：我们要进行杯子操作任务。目标是逐个将杯子叠起来，然后再拆开排成一排。",
+    "subtasks": [
+      {
+        "id": "st_cup_manipulation_flow",
+        "description": "Execute the detailed stacking and unstacking sequence",
+        "spoken_prompt": "Subtask: Please follow the steps to stack and unstack the cups.",
+        "spoken_prompt_cn": "子任务描述：请按照步骤执行叠杯子和拆杯子的流程。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "cup_left",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_2",
+            "name": "cup_center",
+            "role": "base/manipulated"
+          },
+          {
+            "object_id": "obj_3",
+            "name": "cup_right",
+            "role": "manipulated"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Place the left cup into the center cup",
+            "spoken_prompt": "Step one: pick up the cup on the left and place it inside the center cup.",
+            "spoken_prompt_cn": "第一步：拿起左边的杯子，把它套进中间的杯子里。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "cup_left",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_2",
+                "name": "cup_center",
+                "role": "target_container"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Place the right cup into the stack",
+            "spoken_prompt": "Step two: pick up the cup on the right and place it inside the stack.",
+            "spoken_prompt_cn": "第二步：拿起右边的杯子，把它套进刚才叠好的杯子里。",
+            "involved_objects": [
+              {
+                "object_id": "obj_3",
+                "name": "cup_right",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_1",
+                "name": "cup_left",
+                "role": "target_stack_top"
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "description": "Remove the top cup and place it on the left",
+            "spoken_prompt": "Step three: take the top cup out and place it back on the left side.",
+            "spoken_prompt_cn": "第三步：拿出最上面的杯子，把它放回左边。",
+            "involved_objects": [
+              {
+                "object_id": "obj_3",
+                "name": "cup_right",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s4",
+            "description": "Remove the next cup and place it on the right",
+            "spoken_prompt": "Step four: take the next cup out and place it on the right side to form a line.",
+            "spoken_prompt_cn": "第四步：拿出现在的最上面的杯子，放在右边，让三个杯子排成一排。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "cup_left",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_2",
+                "name": "cup_center",
+                "role": "reference"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Ensure precise insertion during stacking; final alignment needs to be visually straight."
+  }
+}

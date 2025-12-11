@@ -1,0 +1,124 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "office_binder_clip_01",
+    "name": "Binder clip setup",
+    "name_cn": "蝴蝶夹使用场景",
+    "description": "A desk with a binder clip and a document bag",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "binder_clip",
+        "category": "stationery",
+        "state": {
+          "placement": "on_desk",
+          "relative": "center-right, closed"
+        }
+      },
+      {
+        "object_id": "obj_2",
+        "name": "document_bag",
+        "category": "container",
+        "state": {
+          "placement": "on_desk",
+          "relative": "center, sealed edge exposed"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_use_binder_clip_cycle",
+    "name": "Use binder clip",
+    "name_cn": "使用蝴蝶夹",
+    "description": "Pick up clip, attach to file bag, remove, and return to desk",
+    "spoken_prompt": "Task: We will use a binder clip. The goal is to clip the document bag and then remove the clip.",
+    "spoken_prompt_cn": "任务描述：我们要使用蝴蝶夹。目标是用它夹住文件袋，然后再取下来。",
+    "subtasks": [
+      {
+        "id": "st_clip_operation_flow",
+        "description": "Execute the clipping and unclipping sequence",
+        "spoken_prompt": "Subtask: Please clip the file bag and then remove the clip.",
+        "spoken_prompt_cn": "子任务描述：请夹住文件袋，然后再把夹子取下来。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "binder_clip",
+            "role": "tool"
+          },
+          {
+            "object_id": "obj_2",
+            "name": "document_bag",
+            "role": "target_object"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Pick up the binder clip",
+            "spoken_prompt": "Step one: pick up the binder clip from the desk.",
+            "spoken_prompt_cn": "第一步：拿起桌上的蝴蝶夹。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "binder_clip",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Press the clip open and attach it to the bag seal",
+            "spoken_prompt": "Step two: press the handles to open the clip and attach it to the seal of the document bag.",
+            "spoken_prompt_cn": "第二步：按压长尾打开夹口，夹住文件袋的封口。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "binder_clip",
+                "role": "tool"
+              },
+              {
+                "object_id": "obj_2",
+                "name": "document_bag",
+                "role": "target_surface"
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "description": "Press the clip open and remove it from the bag",
+            "spoken_prompt": "Step three: press the handles again to open the clip and remove it from the bag.",
+            "spoken_prompt_cn": "第三步：再次按压长尾打开夹口，把蝴蝶夹取下来。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "binder_clip",
+                "role": "tool"
+              },
+              {
+                "object_id": "obj_2",
+                "name": "document_bag",
+                "role": "source"
+              }
+            ]
+          },
+          {
+            "id": "s4",
+            "description": "Place the binder clip back on the desk",
+            "spoken_prompt": "Step four: place the binder clip back on the desk.",
+            "spoken_prompt_cn": "第四步：把蝴蝶夹放回桌面上。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "binder_clip",
+                "role": "manipulated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Requires finger strength to press the clip open; ensure the clip is securely attached in step 2 before removing."
+  }
+}

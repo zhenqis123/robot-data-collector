@@ -1,0 +1,80 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "study_desk_write_simple_01",
+    "name": "Writing setup",
+    "name_cn": "书写场景",
+    "description": "A desk with a pen and a sheet of paper",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "pen",
+        "category": "stationery",
+        "state": {
+          "placement": "on_desk",
+          "relative": "ready to use"
+        }
+      },
+      {
+        "object_id": "obj_2",
+        "name": "paper",
+        "category": "paper",
+        "state": {
+          "placement": "on_desk",
+          "relative": "center"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_write_simple",
+    "name": "Write on paper",
+    "name_cn": "在纸上写字",
+    "description": "Perform the action of writing on paper",
+    "spoken_prompt": "Task: We will practice writing. The goal is to write on the paper.",
+    "spoken_prompt_cn": "任务描述：我们要进行写字练习。目标是在纸上写字。",
+    "subtasks": [
+      {
+        "id": "st_writing_action",
+        "description": "Execute the writing action",
+        "spoken_prompt": "Subtask: Please write on the paper.",
+        "spoken_prompt_cn": "子任务描述：请在纸上写字。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "pen",
+            "role": "tool"
+          },
+          {
+            "object_id": "obj_2",
+            "name": "paper",
+            "role": "target_surface"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Pick up the pen and write",
+            "spoken_prompt": "Step one: pick up the pen and write on the paper.",
+            "spoken_prompt_cn": "第一步：拿起笔，在纸上写字。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "pen",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_2",
+                "name": "paper",
+                "role": "target"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Ensure natural writing posture and movement."
+  }
+}

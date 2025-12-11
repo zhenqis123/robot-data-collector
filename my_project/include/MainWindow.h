@@ -4,6 +4,9 @@
 #include <memory>
 #include <string>
 #include <optional>
+#include <cstdint>
+#include <unordered_map>
+#include <chrono>
 
 #include "Logger.h"
 #include "ConfigManager.h"
@@ -49,11 +52,10 @@ private slots:
     void onStopRecording();
     void onPauseRecording();
     void onResumeRecording();
-    void onAdvanceStep();
-    void onErrorStep();
+    void onStartStep();
+    void onEndStep();
     void onSkipStep();
     void onRetryStep();
-    void onAbortTask();
     void onBrowseSavePath();
     void onCameraSelectionChanged(int index);
     void onApplyCameraSettings();
@@ -81,11 +83,10 @@ private:
     QPushButton *_stopCaptureButton{nullptr};
     QPushButton *_pauseButton{nullptr};
     QPushButton *_resumeButton{nullptr};
-    QPushButton *_advanceButton{nullptr};
-    QPushButton *_errorButton{nullptr};
+    QPushButton *_startStepButton{nullptr};
+    QPushButton *_endStepButton{nullptr};
     QPushButton *_skipButton{nullptr};
     QPushButton *_retryButton{nullptr};
-    QPushButton *_abortButton{nullptr};
     QComboBox *_modeSelect{nullptr};
     QPushButton *_applySettingsButton{nullptr};
     QLineEdit *_captureNameEdit{nullptr};
@@ -190,6 +191,15 @@ private:
     void updateVlmPromptMetadata();
 
     PromptLanguage _promptLanguage{PromptLanguage::Chinese};
+    struct StepTiming
+    {
+        std::string subtaskId;
+        std::string stepId;
+        int64_t startMs{0};
+    };
+    std::optional<StepTiming> _activeStepTiming;
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point> _lastTrigger;
+    bool throttleTrigger(const std::string &action, int ms);
     bool useChinesePrompts() const;
 };
 #include "ArucoTracker.h"

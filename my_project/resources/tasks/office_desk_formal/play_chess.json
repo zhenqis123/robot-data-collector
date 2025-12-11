@@ -1,0 +1,148 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_chess_01",
+    "name": "Chessboard setup",
+    "name_cn": "国际象棋场景",
+    "description": "A standard chessboard with pieces in the starting position",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "white_pawn_e2",
+        "category": "chess_piece",
+        "state": {
+          "placement": "on_board",
+          "relative": "square e2"
+        }
+      },
+      {
+        "object_id": "obj_2",
+        "name": "black_knight_g8",
+        "category": "chess_piece",
+        "state": {
+          "placement": "on_board",
+          "relative": "square g8"
+        }
+      },
+      {
+        "object_id": "obj_3",
+        "name": "chess_board",
+        "category": "game_board",
+        "state": {
+          "placement": "on_table",
+          "relative": "center"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_chess_play_restore",
+    "name": "Play and restore chess pieces",
+    "name_cn": "国际象棋走子与复位",
+    "description": "Make legal chess moves to scramble, then manually pick and place pieces to reset",
+    "spoken_prompt": "Task: We will play chess. The goal is to make legal moves to scramble the board, and then put the pieces back to their starting positions.",
+    "spoken_prompt_cn": "任务描述：我们要下国际象棋。目标是按规则走几步打乱棋盘，然后直接把棋子搬回原位。",
+    "subtasks": [
+      {
+        "id": "st_chess_sequence",
+        "description": "Execute legal moves and then reset manually",
+        "spoken_prompt": "Subtask: Please make moves according to the rules, then reset the board.",
+        "spoken_prompt_cn": "子任务描述：请按规则走棋，然后复原棋盘。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "white_pawn_e2",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_2",
+            "name": "black_knight_g8",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_3",
+            "name": "chess_board",
+            "role": "surface"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Move White Pawn from e2 to e4 (Legal Move)",
+            "spoken_prompt": "Step one: move the white pawn from e2 forward two squares to e4.",
+            "spoken_prompt_cn": "第一步：按规则，将白色兵从e2向前走两格，走到e4。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "white_pawn_e2",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_3",
+                "name": "chess_board",
+                "role": "reference"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Move Black Knight from g8 to f6 (Legal Move)",
+            "spoken_prompt": "Step two: move the black knight from g8 to f6.",
+            "spoken_prompt_cn": "第二步：按规则，将黑色马从g8跳到f6。",
+            "involved_objects": [
+              {
+                "object_id": "obj_2",
+                "name": "black_knight_g8",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_3",
+                "name": "chess_board",
+                "role": "reference"
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "description": "Pick up Black Knight and place it back on g8 (Direct Reset)",
+            "spoken_prompt": "Step three: pick up the black knight and place it directly back on g8.",
+            "spoken_prompt_cn": "第三步：拿起黑色马，直接把它放回g8原位。",
+            "involved_objects": [
+              {
+                "object_id": "obj_2",
+                "name": "black_knight_g8",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_3",
+                "name": "chess_board",
+                "role": "target_location"
+              }
+            ]
+          },
+          {
+            "id": "s4",
+            "description": "Pick up White Pawn and place it back on e2 (Direct Reset)",
+            "spoken_prompt": "Step four: pick up the white pawn and place it directly back on e2.",
+            "spoken_prompt_cn": "第四步：拿起白色兵，直接把它放回e2原位。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "white_pawn_e2",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_3",
+                "name": "chess_board",
+                "role": "target_location"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Steps 1 & 2 must follow chess rules (e.g., Knight jumps); Steps 3 & 4 are direct pick-and-place actions for restoration."
+  }
+}

@@ -1,0 +1,130 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "kitchen_pour_01",
+    "name": "Pouring setup",
+    "name_cn": "倒水场景",
+    "description": "A table with a water bottle (capped) and an empty cup",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "water_bottle",
+        "category": "bottle",
+        "state": {
+          "placement": "on_table",
+          "relative": "center-left, capped, contains water"
+        }
+      },
+      {
+        "object_id": "obj_2",
+        "name": "bottle_cap",
+        "category": "bottle_part",
+        "state": {
+          "placement": "attached_to_bottle",
+          "relative": "on the bottle mouth"
+        }
+      },
+      {
+        "object_id": "obj_3",
+        "name": "cup",
+        "category": "cup",
+        "state": {
+          "placement": "on_table",
+          "relative": "center-right, empty"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_pour_water_cap_on_table",
+    "name": "Pour water into cup",
+    "name_cn": "往杯子里倒水",
+    "description": "Unscrew cap, place it on table, pour water, and recap",
+    "spoken_prompt": "Task: We will practice pouring water. The goal is to place the cap on the table, pour water, and then close the bottle.",
+    "spoken_prompt_cn": "任务描述：我们要进行倒水任务。目标是将瓶盖放在桌上，把水倒进杯子，然后关上水瓶。",
+    "subtasks": [
+      {
+        "id": "st_pour_flow",
+        "description": "Execute the pouring sequence with cap placement",
+        "spoken_prompt": "Subtask: Please perform the pouring sequence.",
+        "spoken_prompt_cn": "子任务描述：请执行倒水流程。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "water_bottle",
+            "role": "tool/source"
+          },
+          {
+            "object_id": "obj_2",
+            "name": "bottle_cap",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_3",
+            "name": "cup",
+            "role": "target_container"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Unscrew the cap and place it flat on the table",
+            "spoken_prompt": "Step one: unscrew the bottle cap and place it securely on the table.",
+            "spoken_prompt_cn": "第一步：拧开水瓶盖，把它放在桌子上。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "water_bottle",
+                "role": "held"
+              },
+              {
+                "object_id": "obj_2",
+                "name": "bottle_cap",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Pour water from the bottle into the cup",
+            "spoken_prompt": "Step two: pick up the bottle and pour water into the cup.",
+            "spoken_prompt_cn": "第二步：拿起水瓶，往杯子里倒水。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "water_bottle",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_3",
+                "name": "cup",
+                "role": "target_container"
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "description": "Screw the cap back onto the bottle",
+            "spoken_prompt": "Step three: pick up the cap from the table and screw it back on tight.",
+            "spoken_prompt_cn": "第三步：从桌上拿起瓶盖，盖回水瓶并拧紧。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "water_bottle",
+                "role": "target"
+              },
+              {
+                "object_id": "obj_2",
+                "name": "bottle_cap",
+                "role": "manipulated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "The cap MUST be placed on the table during pouring (do not hold it in hand); ensure water is not spilled."
+  }
+}

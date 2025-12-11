@@ -1,0 +1,98 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_huarongdao_simple_01",
+    "name": "Huarongdao puzzle setup",
+    "name_cn": "华容道游戏场景",
+    "description": "A Huarongdao wooden board with blocks in an initial neat arrangement",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "puzzle_blocks",
+        "category": "puzzle_block",
+        "state": {
+          "placement": "on_board",
+          "relative": "arranged neatly"
+        }
+      },
+      {
+        "object_id": "obj_2",
+        "name": "puzzle_board",
+        "category": "game_board",
+        "state": {
+          "placement": "on_table",
+          "relative": "center"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_huarongdao_scramble_restore",
+    "name": "Scramble and restore Huarongdao",
+    "name_cn": "打乱与复原华容道",
+    "description": "Randomly slide blocks to scramble the puzzle, then restore them to the original state",
+    "spoken_prompt": "Task: We will play Huarongdao. The goal is to scramble the blocks and then restore them to their original positions.",
+    "spoken_prompt_cn": "任务描述：我们要玩华容道。目标是打乱棋子布局，然后将它们恢复原位。",
+    "subtasks": [
+      {
+        "id": "st_scramble_restore_flow",
+        "description": "Execute the scrambling and restoring sequence",
+        "spoken_prompt": "Subtask: Please mess up the puzzle and then solve it back.",
+        "spoken_prompt_cn": "子任务描述：请打乱棋盘，然后再复原。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "puzzle_blocks",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_2",
+            "name": "puzzle_board",
+            "role": "frame"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Slide blocks randomly to scramble the layout",
+            "spoken_prompt": "Step one: slide several blocks randomly to mess up the current layout.",
+            "spoken_prompt_cn": "第一步：随意滑动几个棋子，打乱目前的布局。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "puzzle_blocks",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_2",
+                "name": "puzzle_board",
+                "role": "reference"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Slide blocks back to their original positions",
+            "spoken_prompt": "Step two: slide the blocks back to restore the original layout.",
+            "spoken_prompt_cn": "第二步：把刚才移动过的棋子滑回去，恢复最初的样子。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "puzzle_blocks",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_2",
+                "name": "puzzle_board",
+                "role": "reference"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Movements must be sliding only (no lifting); remember the moves in step 1 to successfully restore in step 2."
+  }
+}

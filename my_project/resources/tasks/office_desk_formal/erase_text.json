@@ -1,0 +1,164 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "classroom_whiteboard_01",
+    "name": "Whiteboard setup",
+    "name_cn": "黑板/白板书写场景",
+    "description": "A whiteboard with existing text, an eraser, and a marker on the tray",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "whiteboard",
+        "category": "board",
+        "state": {
+          "placement": "wall_mounted_or_stand",
+          "relative": "front, contains old text"
+        }
+      },
+      {
+        "object_id": "obj_2",
+        "name": "board_eraser",
+        "category": "cleaning_tool",
+        "state": {
+          "placement": "on_tray",
+          "relative": "bottom tray, accessible"
+        }
+      },
+      {
+        "object_id": "obj_3",
+        "name": "marker_pen",
+        "category": "stationery",
+        "state": {
+          "placement": "on_tray",
+          "relative": "bottom tray, capped"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_erase_and_write_text",
+    "name": "Erase and write text",
+    "name_cn": "擦黑板并书写",
+    "description": "Clean the board using an eraser and write 'beingbeyond' with a marker",
+    "spoken_prompt": "Task: We will update the board. The goal is to erase the old text and write 'beingbeyond'.",
+    "spoken_prompt_cn": "任务描述：我们要更新黑板内容。目标是擦掉旧的文字，然后写上“beingbeyond”。",
+    "subtasks": [
+      {
+        "id": "st_clean_and_write_flow",
+        "description": "Execute the erasing and writing sequence",
+        "spoken_prompt": "Subtask: Please clean the board and write the new word.",
+        "spoken_prompt_cn": "子任务描述：请擦干净黑板，并写下新单词。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "whiteboard",
+            "role": "target_surface"
+          },
+          {
+            "object_id": "obj_2",
+            "name": "board_eraser",
+            "role": "tool"
+          },
+          {
+            "object_id": "obj_3",
+            "name": "marker_pen",
+            "role": "tool"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Pick up the eraser",
+            "spoken_prompt": "Step one: pick up the eraser from the tray.",
+            "spoken_prompt_cn": "第一步：从托盘里拿起黑板擦。",
+            "involved_objects": [
+              {
+                "object_id": "obj_2",
+                "name": "board_eraser",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Erase the text on the board",
+            "spoken_prompt": "Step two: wipe the board thoroughly to remove existing text.",
+            "spoken_prompt_cn": "第二步：仔细擦拭黑板，清除原本的文字。",
+            "involved_objects": [
+              {
+                "object_id": "obj_2",
+                "name": "board_eraser",
+                "role": "tool"
+              },
+              {
+                "object_id": "obj_1",
+                "name": "whiteboard",
+                "role": "target_surface"
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "description": "Put the eraser back",
+            "spoken_prompt": "Step three: place the eraser back on the tray.",
+            "spoken_prompt_cn": "第三步：把黑板擦放回托盘。",
+            "involved_objects": [
+              {
+                "object_id": "obj_2",
+                "name": "board_eraser",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s4",
+            "description": "Pick up the marker and uncap it",
+            "spoken_prompt": "Step four: pick up the marker and remove the cap.",
+            "spoken_prompt_cn": "第四步：拿起记号笔，并拔掉笔盖。",
+            "involved_objects": [
+              {
+                "object_id": "obj_3",
+                "name": "marker_pen",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s5",
+            "description": "Write 'beingbeyond' on the board",
+            "spoken_prompt": "Step five: write the word 'beingbeyond' clearly on the board.",
+            "spoken_prompt_cn": "第五步：在黑板上清晰地写下“beingbeyond”。",
+            "involved_objects": [
+              {
+                "object_id": "obj_3",
+                "name": "marker_pen",
+                "role": "tool"
+              },
+              {
+                "object_id": "obj_1",
+                "name": "whiteboard",
+                "role": "target_surface"
+              }
+            ]
+          },
+          {
+            "id": "s6",
+            "description": "Recap the marker and put it back",
+            "spoken_prompt": "Step six: put the cap back on the marker and return it to the tray.",
+            "spoken_prompt_cn": "第六步：盖上笔盖，把记号笔放回托盘。",
+            "involved_objects": [
+              {
+                "object_id": "obj_3",
+                "name": "marker_pen",
+                "role": "manipulated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Ensure the board is wiped clean before writing; writing must be legible; marker must be capped after use to prevent drying."
+  }
+}

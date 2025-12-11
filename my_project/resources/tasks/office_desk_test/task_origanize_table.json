@@ -2,6 +2,8 @@
   "schema_version": "1.1",
   "scene": {
     "scene_id": "office_desk_complex_01",
+    "name": "Office desk complex",
+    "name_cn": "办公室桌面复杂场景",
     "description": "A workspace with papers, stationery, fruits, and cups.",
     "objects": [
       { "object_id": "cup_stack", "name": "stack of paper cups", "category": "container", "state": { "placement": "stacked", "relative": "right side" } },
@@ -20,6 +22,8 @@
   },
   "task": {
     "id": "task_full_office_workflow_hands",
+    "name": "Full office workflow with cups and papers",
+    "name_cn": "杯子水果分装与文件归档流程",
     "description": "Execute a workflow: sort fruits into cups, archive documents, and clean up the workspace, with specific hand assignments.",
     "spoken_prompt": "Task started: We will sort items, archive papers, and clean up.",
     "spoken_prompt_cn": "任务开始：我们将进行物品分装、文档归档和桌面清理。",
