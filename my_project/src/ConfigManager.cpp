@@ -131,7 +131,11 @@ bool ConfigManager::load(const std::string &path)
         const auto audioObj = doc.object().value("audio_prompts").toObject();
         _audioConfig.enabled = audioObj.value("enabled").toBool(false);
         _audioConfig.volume = static_cast<float>(audioObj.value("volume").toDouble(1.0));
-        _audioConfig.mode = "index_tts";
+        _audioConfig.mode = audioObj.value("mode").toString("index_tts").toLower().toStdString();
+        _audioConfig.language = audioObj.value("language").toString("chinese").toLower().toStdString();
+        _audioConfig.indexTts.audioPaths.clear();
+        _audioConfig.texts.clear();
+        _audioConfig.keybindings.clear();
         const auto indexObj = audioObj.value("index_tts").toObject();
         _audioConfig.indexTts.endpoint = indexObj.value("endpoint").toString().toStdString();
         const auto refs = indexObj.value("audio_paths").toArray();

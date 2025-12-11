@@ -121,12 +121,12 @@ private:
     QPushButton *_vlmGenerateButton{nullptr};
     QComboBox *_vlmCameraSelect{nullptr};
     QPushButton *_viewTaskButton{nullptr};
-    QComboBox *_audioEngineSelect{nullptr};
     AudioPromptsConfig _audioConfig;
 
     std::vector<TaskTemplate> _taskTemplates;
     std::optional<TaskTemplate> _currentTask;
     enum class TaskMode { Script, Vlm };
+    enum class PromptLanguage { English, Chinese };
     TaskMode _mode{TaskMode::Script};
     std::vector<std::string> _previewCameraList;
 
@@ -185,12 +185,11 @@ private:
     void updateRecordingBanner();
     void positionRecordingLabel();
     void resizeEvent(QResizeEvent *event) override;
+    PromptLanguage promptLanguageFromConfig() const;
     void applyAudioConfigForLanguage();
     void updateVlmPromptMetadata();
 
-    enum class PromptLanguage { English, Chinese };
     PromptLanguage _promptLanguage{PromptLanguage::Chinese};
-    QComboBox *_promptLanguageSelect{nullptr};
     bool useChinesePrompts() const;
 };
 #include "ArucoTracker.h"
