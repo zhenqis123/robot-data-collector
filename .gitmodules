@@ -2,3 +2,12 @@
 	path = index-tts-vllm
 	url = https://github.com/Ksuriuri/index-tts-vllm.git
 	ignore = untracked
+[submodule "third_party/topotag"]
+	path = third_party/topotag
+	url = https://github.com/herohuyongtao/topotag.git
+[submodule "third_party/apriltag-imgs"]
+	path = third_party/apriltag-imgs
+	url = https://github.com/AprilRobotics/apriltag-imgs.git
+[submodule "third_party/apriltag"]
+	path = third_party/apriltag
+	url = https://github.com/AprilRobotics/apriltag.git

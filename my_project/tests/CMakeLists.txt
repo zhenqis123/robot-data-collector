@@ -20,6 +20,7 @@ target_include_directories(unit_tests PRIVATE
     ${PROJECT_INCLUDE_DIR}
     ${OpenCV_INCLUDE_DIRS}
     ${REALSENSE2_INCLUDE_DIR}
+    ${APRILTAG_SOURCE_DIR}
 )
 
 target_link_libraries(unit_tests
@@ -29,6 +30,7 @@ target_link_libraries(unit_tests
         ${QT_LIBS}
         ${OpenCV_LIBS}
         ${REALSENSE2_LIBRARY}
+        apriltag
         Threads::Threads
         CURL::libcurl
 )

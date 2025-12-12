@@ -37,17 +37,29 @@ cmake --build build
 ```
 RGB 相机可仅提供 `color` 段，也可以沿用旧版 `resolution`/`frame_rate`。支持多条记录，用于创建多路相机。
 
-### ArUco 配置
+### 标记配置（ArUco / AprilTag）
 在 `aruco_targets` 数组中填写需要识别的标定板：
 ```json
 "aruco_targets": [
   {
+    "type": "aruco",
     "dictionary": "DICT_4X4_50",
     "marker_ids": [0, 1, 2]
   }
 ]
 ```
 程序只会检测这些字典与 ID 的标记，并将结果写入 `<采集路径>/aruco/<camera>.csv`。
+
+如需切换到 AprilTag，将 `type` 设为 `"apriltag"` 并提供家族名称（缺省时默认 `tagStandard41h12`）：
+```json
+"aruco_targets": [
+  {
+    "type": "apriltag",
+    "family": "tagStandard41h12",
+    "marker_ids": [0, 1, 2]
+  }
+]
+```
 
 ## 数据存储结构
 录制文件采用金字塔式层级：

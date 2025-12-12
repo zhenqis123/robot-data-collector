@@ -26,6 +26,12 @@
 #define APP_LOG_DIR "./resources/logs"
 #endif
 
+enum class PromptLanguage
+{
+    English,
+    Chinese
+};
+
 class QLineEdit;
 class QPushButton;
 class QComboBox;
@@ -127,7 +133,6 @@ private:
     std::vector<TaskTemplate> _taskTemplates;
     std::optional<TaskTemplate> _currentTask;
     enum class TaskMode { Script, Vlm };
-    enum class PromptLanguage { English, Chinese };
     TaskMode _mode{TaskMode::Script};
     std::vector<std::string> _previewCameraList;
 
@@ -186,11 +191,11 @@ private:
     void updateRecordingBanner();
     void positionRecordingLabel();
     void resizeEvent(QResizeEvent *event) override;
-    PromptLanguage promptLanguageFromConfig() const;
+    ::PromptLanguage promptLanguageFromConfig() const;
     void applyAudioConfigForLanguage();
     void updateVlmPromptMetadata();
 
-    PromptLanguage _promptLanguage{PromptLanguage::Chinese};
+    ::PromptLanguage _promptLanguage{::PromptLanguage::Chinese};
     struct StepTiming
     {
         std::string subtaskId;

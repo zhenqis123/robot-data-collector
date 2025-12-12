@@ -55,8 +55,9 @@
   ],
   "aruco_targets": [
     {
-      "dictionary": "DICT_6X6_100",
-      "marker_ids": [0, 1, 2, 3]
+      "type": "apriltag",
+      "family": "tagStandard41h12",
+      "marker_ids": [0, 1, 2, 3,4,5,6]
     }
   ]
 }
