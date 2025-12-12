@@ -1290,16 +1290,16 @@ std::string MainWindow::getTaskSpokenPromptCn() const
 
 bool MainWindow::useChinesePrompts() const
 {
-    return _promptLanguage == PromptLanguage::Chinese;
+    return _promptLanguage == ::PromptLanguage::Chinese;
 }
 
-MainWindow::PromptLanguage MainWindow::promptLanguageFromConfig() const
+::PromptLanguage MainWindow::promptLanguageFromConfig() const
 {
     std::string lang = _audioConfig.language;
     std::transform(lang.begin(), lang.end(), lang.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     if (lang == "en" || lang == "english" || lang == "en-us" || lang == "en_us")
-        return PromptLanguage::English;
-    return PromptLanguage::Chinese;
+        return ::PromptLanguage::English;
+    return ::PromptLanguage::Chinese;
 }
 
 void MainWindow::applyAudioConfigForLanguage()

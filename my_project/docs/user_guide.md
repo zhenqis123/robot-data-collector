@@ -38,17 +38,29 @@ Override runtime parameters by editing `resources/config.json`. RealSense entrie
 ```
 Simple RGB cameras can omit the `depth` block and fall back to the `color` parameters.
 
-### ArUco Targets
+### Fiducial Targets (ArUco / AprilTag)
 Add detection targets under `aruco_targets`:
 ```json
 "aruco_targets": [
   {
+    "type": "aruco",
     "dictionary": "DICT_4X4_50",
     "marker_ids": [0, 1, 2]
   }
 ]
 ```
 Only the listed markers from the specified dictionary will be searched in each RGB frame. Detection results are written per capture under `<capture_path>/aruco/<camera>.csv`.
+
+To switch to AprilTag, set `type` to `"apriltag"` and provide a family (defaulting to `tagStandard41h12` if omitted):
+```json
+"aruco_targets": [
+  {
+    "type": "apriltag",
+    "family": "tagStandard41h12",
+    "marker_ids": [0, 1, 2]
+  }
+]
+```
 
 ## Storage Layout
 Recordings are organized hierarchically:

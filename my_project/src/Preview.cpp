@@ -126,6 +126,7 @@ void Preview::showFrame(const FrameData &frame)
 
     auto &view = it->second;
     std::string arucoInfo;
+    const std::string detectorLabel = _arucoTracker ? _arucoTracker->detectorName() : "Markers";
 
     if (view.colorLabel && !frame.image.empty())
     {
@@ -165,7 +166,7 @@ void Preview::showFrame(const FrameData &frame)
                 source = &overlayMat;
 
                 std::ostringstream ss;
-                ss << "ArUco " << detections.size() << " ids: ";
+                ss << detectorLabel << " " << detections.size() << " ids: ";
                 for (size_t i = 0; i < detections.size(); ++i)
                 {
                     ss << detections[i].markerId;
@@ -189,8 +190,8 @@ void Preview::showFrame(const FrameData &frame)
 
     if (!arucoInfo.empty() && view.infoLabel)
     {
-        // Append ArUco info to the FPS label for this device.
-        view.lastArucoText = "ArUco: " + arucoInfo;
+        // Append marker info to the FPS label for this device.
+        view.lastArucoText = detectorLabel + ": " + arucoInfo;
         renderInfo(view);
     }
     else

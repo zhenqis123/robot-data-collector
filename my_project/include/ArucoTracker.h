@@ -15,6 +15,9 @@
 #include "CameraInterface.h"
 #include "ConfigManager.h"
 
+struct apriltag_detector;
+struct apriltag_family;
+
 class ArucoTracker
 {
 public:
@@ -25,7 +28,9 @@ public:
     void endSession();
     void submit(const FrameData &frame);
     std::vector<ArucoDetection> getLatestDetections(const std::string &cameraId) const;
-    bool isAvailable() const { return static_cast<bool>(_dictionary); }
+    bool isAvailable() const { return _detectorType == FiducialType::Aruco ? static_cast<bool>(_dictionary)
+                                                                           : _aprilDetector != nullptr; }
+    std::string detectorName() const { return _detectorLabel; }
 
 private:
     struct Job
@@ -40,6 +45,9 @@ private:
     void writeDetections(const std::string &cameraId,
                          const std::vector<ArucoDetection> &detections);
     static std::string sanitize(const std::string &value);
+    std::vector<ArucoDetection> detectWithAruco(const Job &job);
+    std::vector<ArucoDetection> detectWithAprilTag(const Job &job);
+    void destroyAprilTag();
 
     std::thread _thread;
     mutable std::mutex _mutex;
@@ -51,6 +59,12 @@ private:
     std::unordered_map<std::string, std::ofstream> _files;
     std::unordered_map<std::string, std::vector<ArucoDetection>> _latestDetections;
 
+    FiducialType _detectorType{FiducialType::Aruco};
     cv::Ptr<cv::aruco::Dictionary> _dictionary;
     std::vector<int> _markerIds;
+
+    apriltag_detector *_aprilDetector{nullptr};
+    apriltag_family *_aprilFamily{nullptr};
+    void (*_aprilFamilyDestroy)(apriltag_family *){nullptr};
+    std::string _detectorLabel{"ArUco"};
 };

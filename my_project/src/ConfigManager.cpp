@@ -88,7 +88,16 @@ bool ConfigManager::load(const std::string &path)
     {
         const auto obj = entry.toObject();
         ArucoTarget target;
-        target.dictionary = obj.value("dictionary").toString().toStdString();
+        const auto typeStr = obj.value("type").toString("aruco").toLower();
+        if (typeStr == "apriltag")
+            target.type = FiducialType::AprilTag;
+        else
+            target.type = FiducialType::Aruco;
+
+        const auto family = obj.value("family").toString().toStdString();
+        target.dictionary = !family.empty() ? family : obj.value("dictionary").toString().toStdString();
+        if (target.type == FiducialType::AprilTag && target.dictionary.empty())
+            target.dictionary = "tagStandard41h12";
         auto idsArray = obj.value("marker_ids").toArray();
         for (const auto &idVal : idsArray)
             target.markerIds.push_back(idVal.toInt());

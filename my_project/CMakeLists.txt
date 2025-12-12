@@ -29,6 +29,14 @@ find_package(Threads REQUIRED)
 set(PROJECT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${PROJECT_INCLUDE_DIR})
 
+# AprilTag (optional fiducial detector)
+set(APRILTAG_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/apriltag)
+if(NOT EXISTS ${APRILTAG_SOURCE_DIR}/CMakeLists.txt)
+    message(FATAL_ERROR "AprilTag source not found. Expected at ../third_party/apriltag")
+endif()
+set(BUILD_EXAMPLES OFF CACHE BOOL "Disable AprilTag examples" FORCE)
+add_subdirectory(${APRILTAG_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/apriltag)
+
 file(GLOB PROJECT_HEADERS CONFIGURE_DEPENDS
     ${PROJECT_INCLUDE_DIR}/*.h)
 
@@ -60,11 +68,13 @@ target_link_libraries(${PROJECT_NAME}
         ${QT_LIBS}
         ${OpenCV_LIBS}
         ${REALSENSE2_LIBRARY}
+        apriltag
         Threads::Threads
 )
 target_include_directories(${PROJECT_NAME}
     PRIVATE
         ${REALSENSE2_INCLUDE_DIR}
+        ${APRILTAG_SOURCE_DIR}
 )
 target_compile_definitions(${PROJECT_NAME} PRIVATE USE_PIPER_AUDIO=0)
 

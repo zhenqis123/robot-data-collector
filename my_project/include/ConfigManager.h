@@ -59,8 +59,15 @@ struct CameraConfig
     StreamConfig depth;
 };
 
+enum class FiducialType
+{
+    Aruco,
+    AprilTag
+};
+
 struct ArucoTarget
 {
+    FiducialType type{FiducialType::Aruco};
     std::string dictionary;
     std::vector<int> markerIds;
 };
