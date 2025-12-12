@@ -70,7 +70,7 @@ private:
         std::thread captureThread;
         std::thread displayThread;
         std::thread storageThread;
-        std::unique_ptr<FrameWriter> writer;
+        std::shared_ptr<FrameWriter> writer;
         std::queue<DisplayItem> displayQueue;
         std::queue<CaptureItem> storageQueue;
         std::condition_variable storageCv;

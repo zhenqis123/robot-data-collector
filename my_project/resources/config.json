@@ -42,11 +42,11 @@
       "serial": "017322074878", 
       "align_depth": false,
       "color": {
-        "resolution": "640X360",
+        "resolution": "640X480",
         "frame_rate": 30
       },
       "depth": {
-        "resolution": "640X360",
+        "resolution": "640X480",
         "frame_rate": 30
       }
     },

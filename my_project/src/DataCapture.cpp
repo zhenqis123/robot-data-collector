@@ -177,6 +177,7 @@ void DataCapture::startRecording(const std::string &captureName,
     {
         if (ctxPtr->device)
         {
+            std::lock_guard<std::mutex> lock(ctxPtr->storageMutex); // Protect writer assignment
             bool shouldRecord = recordTypes.empty() || recordTypes.count(ctxPtr->type);
             if (shouldRecord) {
                 ctxPtr->writer = ctxPtr->device->makeWriter(_storage.basePath(), _logger);
@@ -201,6 +202,7 @@ void DataCapture::stopRecording()
     // Clean up writers
     for (auto &ctxPtr : _devices)
     {
+        std::lock_guard<std::mutex> lock(ctxPtr->storageMutex); // Protect writer reset
         ctxPtr->writer.reset();
     }
 }
@@ -223,11 +225,12 @@ void DataCapture::resumeRecording()
 
 void DataCapture::enqueueForStorage(DeviceContext *ctx, const FrameData &frame)
 {
+    std::unique_lock<std::mutex> lock(ctx->storageMutex);
+    
     // If no writer is configured (e.g. recording disabled for this device), skip queuing
     if (!ctx->writer)
         return;
 
-    std::unique_lock<std::mutex> lock(ctx->storageMutex);
     if (ctx->storageQueue.size() >= _maxStorageQueue)
     {
         if (!ctx->dropWarned)
@@ -281,6 +284,7 @@ void DataCapture::storageLoop(DeviceContext *ctx)
     while (true)
     {
         CaptureItem item;
+        std::shared_ptr<FrameWriter> currentWriter; // Keep writer alive during write operation
         {
             std::unique_lock<std::mutex> lock(ctx->storageMutex);
             ctx->storageCv.wait(lock, [ctx]() { return !ctx->storageQueue.empty() || !ctx->storageRunning; });
@@ -288,9 +292,12 @@ void DataCapture::storageLoop(DeviceContext *ctx)
                 break;
             item = std::move(ctx->storageQueue.front());
             ctx->storageQueue.pop();
+            
+            // Capture the writer shared_ptr while holding the lock
+            currentWriter = ctx->writer;
         }
 
-        const bool writeOk = (ctx->writer && ctx->writer->write(item.frame));
+        const bool writeOk = (currentWriter && currentWriter->write(item.frame));
         if (writeOk && item.stats)
         {
             if (auto fps = item.stats->recordWrite())
