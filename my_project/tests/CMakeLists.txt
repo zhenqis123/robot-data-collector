@@ -14,6 +14,7 @@ add_executable(unit_tests ${TEST_SOURCES}
     ${PROJECT_SOURCE_DIR}/src/CameraStats.cpp
     ${PROJECT_SOURCE_DIR}/src/IntrinsicsManager.cpp
     ${PROJECT_SOURCE_DIR}/src/ArucoTracker.cpp
+    ${PROJECT_SOURCE_DIR}/src/TacGlove.cpp
 )
 
 target_include_directories(unit_tests PRIVATE
@@ -31,6 +32,7 @@ target_link_libraries(unit_tests
         ${REALSENSE2_LIBRARY}
         Threads::Threads
         CURL::libcurl
+        rt  # POSIX shared memory and semaphores
 )
 target_compile_definitions(unit_tests
     PRIVATE APP_CONFIG_PATH="${PROJECT_SOURCE_DIR}/resources/config.json"

@@ -8,6 +8,7 @@
 #include "ArucoTracker.h"
 
 DataCapture::DataCapture(std::vector<DeviceSpec> devices,
+                         std::vector<TacGloveSpec> tacGloves,
                          DataStorage &storage,
                          Preview &preview,
                          Logger &logger,
@@ -30,6 +31,18 @@ DataCapture::DataCapture(std::vector<DeviceSpec> devices,
             _preview.registerCameraView(cameraId, spec.type);
             _preview.updateCameraStats(cameraId, stats->current());
             _devices.push_back(std::move(ctx));
+        }
+    }
+
+    // 初始化 TacGlove 设备
+    for (auto &spec : tacGloves)
+    {
+        auto ctx = std::make_unique<TacGloveContext>();
+        ctx->device = std::move(spec.device);
+        if (ctx->device)
+        {
+            _logger.info("TacGlove device added: %s", ctx->device->name().c_str());
+            _tacGloves.push_back(std::move(ctx));
         }
     }
 }
@@ -70,7 +83,17 @@ bool DataCapture::start()
         ctx->storageThread = std::thread(&DataCapture::storageLoop, this, ctx);
     }
 
-    _logger.info("DataCapture started with %zu devices", _devices.size());
+    // 启动 TacGlove 存储线程
+    for (auto &ctxPtr : _tacGloves)
+    {
+        auto *ctx = ctxPtr.get();
+        ctx->storageRunning = true;
+        ctx->writer = ctx->device ? ctx->device->makeWriter(_storage.basePath(), _logger) : nullptr;
+        ctx->storageThread = std::thread(&DataCapture::tacGloveStorageLoop, this, ctx);
+    }
+
+    _logger.info("DataCapture started with %zu cameras and %zu TacGloves",
+                 _devices.size(), _tacGloves.size());
     return true;
 }
 
@@ -102,6 +125,19 @@ void DataCapture::stop()
         ctx->displayCv.notify_all();
     }
 
+    // 停止 TacGlove 线程
+    for (auto &ctxPtr : _tacGloves)
+    {
+        auto *ctx = ctxPtr.get();
+        {
+            std::lock_guard<std::mutex> lock(ctx->storageMutex);
+            ctx->storageRunning = false;
+            std::queue<TacGloveItem> empty;
+            ctx->storageQueue.swap(empty);
+        }
+        ctx->storageCv.notify_all();
+    }
+
     for (auto &ctxPtr : _devices)
     {
         auto *ctx = ctxPtr.get();
@@ -109,6 +145,17 @@ void DataCapture::stop()
             ctx->captureThread.join();
         if (ctx->displayThread.joinable())
             ctx->displayThread.join();
+        if (ctx->storageThread.joinable())
+            ctx->storageThread.join();
+        if (ctx->device)
+            ctx->device->close();
+        ctx->writer.reset();
+    }
+
+    // 关闭 TacGlove 设备
+    for (auto &ctxPtr : _tacGloves)
+    {
+        auto *ctx = ctxPtr.get();
         if (ctx->storageThread.joinable())
             ctx->storageThread.join();
         if (ctx->device)
@@ -135,6 +182,8 @@ void DataCapture::captureLoop(DeviceContext *ctx)
         if (_recording.load() && !_paused.load())
         {
             enqueueForStorage(ctx, frame);
+            // 同步捕获 TacGlove 数据，使用相同的时间戳
+            captureTacGloveFrame(frame.timestamp, frame.deviceTimestampMs);
         }
         if (_arucoTracker)
             _arucoTracker->submit(frame);
@@ -149,8 +198,16 @@ void DataCapture::startRecording(const std::string &captureName,
         return;
     for (auto &ctxPtr : _devices)
         ctxPtr->dropWarned = false;
+    for (auto &ctxPtr : _tacGloves)
+        ctxPtr->dropWarned = false;
     _storage.beginRecording(captureName, subject, basePath);
     for (auto &ctxPtr : _devices)
+    {
+        if (ctxPtr->device)
+            ctxPtr->writer = ctxPtr->device->makeWriter(_storage.basePath(), _logger);
+    }
+    // 为 TacGlove 创建 writer
+    for (auto &ctxPtr : _tacGloves)
     {
         if (ctxPtr->device)
             ctxPtr->writer = ctxPtr->device->makeWriter(_storage.basePath(), _logger);
@@ -164,6 +221,19 @@ void DataCapture::stopRecording()
 {
     _recording = false;
     _paused = false;
+
+    // 重置相机 writer（触发文件关闭）
+    for (auto &ctxPtr : _devices)
+    {
+        ctxPtr->writer.reset();
+    }
+
+    // 重置 TacGlove writer（触发 finalize，写入 meta.json）
+    for (auto &ctxPtr : _tacGloves)
+    {
+        ctxPtr->writer.reset();
+    }
+
     _storage.endRecording();
     _logger.info("Recording stopped");
 }
@@ -254,6 +324,68 @@ void DataCapture::storageLoop(DeviceContext *ctx)
         {
             if (auto fps = item.stats->recordWrite())
                 _preview.updateCameraStats(item.frame.cameraId, *fps);
+        }
+    }
+}
+
+// ============================================================================
+// TacGlove 相关方法实现
+// ============================================================================
+
+void DataCapture::captureTacGloveFrame(const std::chrono::system_clock::time_point &timestamp,
+                                       int64_t deviceTimestampMs)
+{
+    for (auto &ctxPtr : _tacGloves)
+    {
+        auto *ctx = ctxPtr.get();
+        if (ctx->device)
+        {
+            TacGloveDualFrameData frame = ctx->device->captureFrame(timestamp, deviceTimestampMs);
+            if (!frame.leftFrame.data.empty() || !frame.rightFrame.data.empty())
+            {
+                enqueueForTacGloveStorage(ctx, frame);
+            }
+        }
+    }
+}
+
+void DataCapture::enqueueForTacGloveStorage(TacGloveContext *ctx, const TacGloveDualFrameData &frame)
+{
+    std::unique_lock<std::mutex> lock(ctx->storageMutex);
+    if (ctx->storageQueue.size() >= _maxTacGloveQueue)
+    {
+        if (!ctx->dropWarned)
+        {
+            _logger.warn("TacGlove storage queue full for %s; dropping oldest frames",
+                         frame.deviceId.c_str());
+            ctx->dropWarned = true;
+        }
+        ctx->storageQueue.pop();
+    }
+    ctx->storageQueue.push({frame});
+    lock.unlock();
+    ctx->storageCv.notify_one();
+}
+
+void DataCapture::tacGloveStorageLoop(TacGloveContext *ctx)
+{
+    while (true)
+    {
+        TacGloveItem item;
+        {
+            std::unique_lock<std::mutex> lock(ctx->storageMutex);
+            ctx->storageCv.wait(lock, [ctx]() {
+                return !ctx->storageQueue.empty() || !ctx->storageRunning;
+            });
+            if (!ctx->storageRunning && ctx->storageQueue.empty())
+                break;
+            item = std::move(ctx->storageQueue.front());
+            ctx->storageQueue.pop();
+        }
+
+        if (ctx->writer)
+        {
+            ctx->writer->write(item.frame);
         }
     }
 }

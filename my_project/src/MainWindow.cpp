@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "TacGlove.h"
 
 #include <QComboBox>
 #include <QFileDialog>
@@ -1294,7 +1295,26 @@ void MainWindow::onOpenCameras()
         }
     }
 
+    // 创建 TacGlove 设备（使用 Both 模式，单个实例同时采集左右手）
+    std::vector<TacGloveSpec> tacGloves;
+
+    auto tacGlove = createTacGlove("Local", _logger);
+    if (tacGlove && tacGlove->initialize("TacGlove#0", TacGloveMode::Both))
+    {
+        TacGloveSpec spec;
+        spec.device = std::move(tacGlove);
+        spec.deviceId = "TacGlove#0";
+        spec.mode = TacGloveMode::Both;
+        tacGloves.push_back(std::move(spec));
+        _logger.info("TacGlove initialized in Both mode");
+    }
+    else
+    {
+        _logger.warn("Failed to initialize TacGlove device");
+    }
+
     _capture = std::make_unique<DataCapture>(std::move(devices),
+                                             std::move(tacGloves),
                                              _storage, _preview, _logger,
                                              _arucoTracker.get());
     if (_capture->start())

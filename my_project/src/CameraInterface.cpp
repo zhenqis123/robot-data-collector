@@ -133,9 +133,13 @@ public:
                 _logger.info("Binding RealSense to serial %s", config.serial.c_str());
             }
             _rsConfig.enable_stream(RS2_STREAM_COLOR, colorWidth, colorHeight, RS2_FORMAT_BGR8, colorFps);
+            _logger.info("RealSense color stream: %dx%d @ %d FPS", colorWidth, colorHeight, colorFps);
             _rsConfig.enable_stream(RS2_STREAM_DEPTH, depthWidth, depthHeight, RS2_FORMAT_Z16, depthFps);
+            _logger.info("RealSense depth stream: %dx%d @ %d FPS", depthWidth, depthHeight, depthFps);
             auto profile = _pipeline.start(_rsConfig);
+            _logger.info("RealSense pipeline started");
             auto dev = profile.get_device();
+            _logger.info("RealSense device connected: %s", dev.get_info(RS2_CAMERA_INFO_NAME));
             for (auto &&sensor : dev.query_sensors())
             {
                 if (sensor.supports(RS2_OPTION_GLOBAL_TIME_ENABLED))

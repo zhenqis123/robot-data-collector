@@ -48,6 +48,7 @@ set(PROJECT_SOURCES
     src/TaskStateMachine.cpp
     src/AudioPromptPlayer.cpp
     src/NetworkDevice.cpp
+    src/TacGlove.cpp
 )
 
 add_executable(${PROJECT_NAME}
@@ -61,6 +62,7 @@ target_link_libraries(${PROJECT_NAME}
         ${OpenCV_LIBS}
         ${REALSENSE2_LIBRARY}
         Threads::Threads
+        rt  # POSIX shared memory and semaphores
 )
 target_include_directories(${PROJECT_NAME}
     PRIVATE

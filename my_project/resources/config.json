@@ -48,11 +48,11 @@
       "type": "RealSense",
       "id": 0,
       "color": {
-        "resolution": "1280x720",
+        "resolution": "640x480",
         "frame_rate": 30
       },
       "depth": {
-        "resolution": "1280x720",
+        "resolution": "640x480",
         "frame_rate": 30
       }
     },

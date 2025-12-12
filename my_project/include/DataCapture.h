@@ -12,6 +12,7 @@
 
 #include "CameraInterface.h"
 #include "CameraStats.h"
+#include "TacGlove.h"
 
 class ArucoTracker;
 
@@ -25,10 +26,18 @@ struct DeviceSpec
     std::string type;
 };
 
+struct TacGloveSpec
+{
+    std::unique_ptr<TacGloveInterface> device;
+    std::string deviceId;
+    TacGloveMode mode{TacGloveMode::Both};  // 手套模式（左手/右手/双手）
+};
+
 class DataCapture
 {
 public:
     DataCapture(std::vector<DeviceSpec> devices,
+                std::vector<TacGloveSpec> tacGloves,
                 DataStorage &storage,
                 Preview &preview,
                 Logger &logger,
@@ -60,6 +69,23 @@ private:
         std::shared_ptr<CameraStats> stats;
     };
 
+    struct TacGloveItem
+    {
+        TacGloveDualFrameData frame;  // 双手数据帧
+    };
+
+    struct TacGloveContext
+    {
+        std::unique_ptr<TacGloveInterface> device;
+        std::thread storageThread;
+        std::unique_ptr<TacGloveDualWriter> writer;  // 双手数据写入器
+        std::queue<TacGloveItem> storageQueue;
+        std::condition_variable storageCv;
+        std::mutex storageMutex;
+        bool storageRunning{false};
+        bool dropWarned{false};
+    };
+
     struct DeviceContext
     {
         std::unique_ptr<CameraInterface> device;
@@ -80,9 +106,11 @@ private:
     };
 
     std::vector<std::unique_ptr<DeviceContext>> _devices;
+    std::vector<std::unique_ptr<TacGloveContext>> _tacGloves;
     std::unordered_map<std::string, std::shared_ptr<CameraStats>> _stats;
     size_t _maxStorageQueue{200};
     size_t _maxDisplayQueue{100};
+    size_t _maxTacGloveQueue{500};
     std::atomic<bool> _running{false};
     std::atomic<bool> _recording{false};
     std::atomic<bool> _paused{false};
@@ -96,4 +124,10 @@ private:
     void storageLoop(DeviceContext *ctx);
     void enqueueForStorage(DeviceContext *ctx, const FrameData &frame);
     void enqueueForDisplay(DeviceContext *ctx, const FrameData &frame);
+
+    // TacGlove 相关方法
+    void tacGloveStorageLoop(TacGloveContext *ctx);
+    void enqueueForTacGloveStorage(TacGloveContext *ctx, const TacGloveDualFrameData &frame);
+    void captureTacGloveFrame(const std::chrono::system_clock::time_point &timestamp,
+                              int64_t deviceTimestampMs);
 };

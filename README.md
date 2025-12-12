@@ -89,6 +89,65 @@ python3 api_server.py \
 
 权重文件和缓存不会被提交到 Git，仅在本地存在。
 
+## 带触觉手套的使用说明
+
+先启动python端：
+
+```bash
+python my_project/tac_glove_py/TacDataCollector.py
+```
+
+再启动C++端：
+
+```bash
+./build_release.sh
+./my_project/build_release/DataCollectorApp
+```
+
+## 数据存储结构
+
+录制数据的目录结构现在如下：
+
+```text
+basePath/
+├── RealSense_xxx/          # 相机数据
+│   ├── color/
+│   │   ├── 000001.png
+│   │   └── ...
+│   ├── depth/
+│   │   ├── 000001.png
+│   │   └── ...
+│   └── timestamps.csv
+├── tactile_left/           # 左手触觉手套数据
+│   ├── tactile_data.bin    # N×137 二进制矩阵 (float32)
+│   ├── tactile_data.csv    # N×137 CSV 矩阵（可读格式）
+│   ├── timestamps.csv      # 时间戳文件
+│   └── meta.json           # 元数据
+└── tactile_right/          # 右手触觉手套数据
+    ├── tactile_data.bin
+    ├── tactile_data.csv
+    ├── timestamps.csv
+    └── meta.json
+```
+
+文件格式:
+
+- ```tactile_data.bin``` - 二进制矩阵文件
+  - 格式：```float32_le```（小端 32 位浮点数）
+  - 大小：```N × 137 × 4``` 字节
+  - 可直接用 numpy 读取：```np.fromfile("tactile_data.bin", dtype=np.float32).reshape(-1, 137)```
+  
+- ```tactile_data.csv``` - CSV 矩阵文件
+  - 每行 137 个值，逗号分隔
+  - 无表头，纯数据，方便可读性检查
+  - 可用 pandas 读取：```pd.read_csv("tactile_data.csv", header=None)```
+  
+- ```timestamps.csv``` - 时间戳文件
+  - 包含列：```frame_index, timestamp_iso, timestamp_ms, device_timestamp_ms```
+  - 与相机帧时间戳对齐
+  
+- ```meta.json``` - 元数据文件
+
 ## 新设备接入概览
 
 如果需要在 Data Collector 中接入新的相机/传感器类型，典型步骤如下（概览）：
