@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <vector>
 #include <functional>
+#include <unordered_set>
 
 #include "CameraInterface.h"
 #include "CameraStats.h"
@@ -49,7 +50,8 @@ public:
     bool isRunning() const { return _running.load(); }
     void startRecording(const std::string &captureName,
                         const std::string &subject,
-                        const std::string &basePath);
+                        const std::string &basePath,
+                        const std::unordered_set<std::string> &recordTypes = {});
     void stopRecording();
     void pauseRecording();
     void resumeRecording();
@@ -89,11 +91,12 @@ private:
     struct DeviceContext
     {
         std::unique_ptr<CameraInterface> device;
+        std::string type;
         std::shared_ptr<CameraStats> stats;
         std::thread captureThread;
         std::thread displayThread;
         std::thread storageThread;
-        std::unique_ptr<FrameWriter> writer;
+        std::shared_ptr<FrameWriter> writer;
         std::queue<DisplayItem> displayQueue;
         std::queue<CaptureItem> storageQueue;
         std::condition_variable storageCv;

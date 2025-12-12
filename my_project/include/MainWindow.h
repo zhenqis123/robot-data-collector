@@ -32,6 +32,9 @@ class QWidget;
 class QScrollArea;
 class QGroupBox;
 class QDialog;
+class QMediaPlayer;
+class QVideoWidget;
+class QCheckBox;
 
 class MainWindow : public QMainWindow
 {
@@ -101,11 +104,14 @@ private:
     QLabel *_sceneLabel{nullptr};
     QLabel *_taskLabel{nullptr};
     QLabel *_recordingLabel{nullptr};
+    QLabel *_promptStepLabel{nullptr};
     QVBoxLayout *_devicesLayout{nullptr};
     QWidget *_devicesWidget{nullptr};
     QScrollArea *_scrollArea{nullptr};
     QWidget *_controlPanel{nullptr};
     QDialog *_promptWindow{nullptr};
+    QMediaPlayer *_promptPlayer{nullptr};
+    QVideoWidget *_promptVideoWidget{nullptr};
     QComboBox *_sceneSelect{nullptr};
     QComboBox *_taskSelect{nullptr};
     QWidget *_taskSelectionGroup{nullptr};
@@ -118,6 +124,12 @@ private:
     QPushButton *_viewTaskButton{nullptr};
     QComboBox *_audioEngineSelect{nullptr};
     AudioPromptsConfig _audioConfig;
+    
+    // Aux Controls
+    QCheckBox *_chkConnectGlove{nullptr};
+    QCheckBox *_chkSaveGlove{nullptr};
+    QCheckBox *_chkConnectVive{nullptr};
+    QCheckBox *_chkSaveVive{nullptr};
 
     std::vector<TaskTemplate> _taskTemplates;
     std::optional<TaskTemplate> _currentTask;
@@ -145,6 +157,7 @@ private:
     QGroupBox *createPromptControlGroup();
     QGroupBox *createCameraSettingsGroup();
     QGroupBox *createStatusGroup();
+    QGroupBox *createAuxDeviceGroup();
     void loadTaskTemplates();
     void populateSceneList();
     void populateTaskList(const std::string &sceneId);
@@ -171,16 +184,20 @@ private:
     std::string getStepSpokenPromptCnById(const std::string &stepId, const std::string &subtaskId = "") const;
     std::string getSubtaskSpokenPromptCnById(const std::string &subtaskId) const;
     std::string getTaskSpokenPromptCn() const;
+    std::string getStepVideoPathById(const std::string &stepId, const std::string &subtaskId = "") const;
+    void updatePromptWindowMedia(const std::string &subtaskId, const std::string &stepId);
+    void stopPromptVideo();
+    void ensurePromptWindow();
     void updateKeyBindings();
     int keyFromString(const std::string &keyStr) const;
     void updateRecordingBanner();
     void positionRecordingLabel();
     void resizeEvent(QResizeEvent *event) override;
     void applyAudioConfigForLanguage();
+    void updateVlmPromptMetadata();
 
     enum class PromptLanguage { English, Chinese };
     PromptLanguage _promptLanguage{PromptLanguage::Chinese};
     QComboBox *_promptLanguageSelect{nullptr};
     bool useChinesePrompts() const;
 };
-#include "ArucoTracker.h"

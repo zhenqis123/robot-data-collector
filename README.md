@@ -9,9 +9,24 @@
 - `build/`、`my_project/build/`：本地 CMake 构建目录（不应提交到 Git）。
 - 根目录下的脚本与音频文件：用于本地调试与示例。
 
+## 快速开始
+
+```bash
+git clone https://github.com/zhenqis123/robot-data-collector.git
+cd robot-data-collector
+
+# 如需本地 TTS，可初始化子模块（可选）
+git submodule update --init --recursive
+
+# Debug 构建并运行
+cmake -S my_project -B my_project/build -DCMAKE_BUILD_TYPE=Debug
+cmake --build my_project/build -j
+./my_project/build/DataCollectorApp
+```
+
 ## 环境与依赖（Ubuntu 示例）
 
-运行前建议在 Ubuntu 上安装以下依赖：
+运行前在 Ubuntu 上安装以下依赖：
 
 - Qt5 Widgets/Core/Multimedia
 - OpenCV
@@ -37,8 +52,11 @@ sudo apt install libcurl4-openssl-dev nlohmann-json3-dev
 sudo apt install librealsense2-utils librealsense2-dev librealsense2-dbg
 ```
 
+建议使用较新的 Ubuntu LTS（例如 20.04/22.04），并确保 CMake ≥ 3.16、GCC ≥ 9。
+
 ## 获取代码与子模块
 
+如果不需要在本地运行tts服务，可以不初始化indetts子模块，访问我这边4090主机的tts服务就可以。ip是192.168.20.173。需要在config.json中修改endpoint为这个地址，然后将audio_paths设置为项目根目录下的jay_promptvn.wav文件路径或者其他示例音频文件路径。
 ```bash
 git clone https://github.com/zhenqis123/robot-data-collector.git
 cd robot-data-collector
@@ -46,6 +64,13 @@ cd robot-data-collector
 # 初始化 IndexTTS 子模块
 git submodule update --init --recursive
 ```
+
+
+可以通过运行根目录下的test_index_tts.py脚本测试tts服务是否可用：
+```bash
+python3 test_index_tts.py
+```
+我这边尽量保证4090主机的tts服务是在线的。
 
 ## 构建与运行 C++ 应用
 
@@ -57,7 +82,7 @@ cmake --build my_project/build -j
 ./my_project/build/DataCollectorApp
 ```
 
-如果需要一键重新构建 Release 版本，可在仓库根目录运行：
+如果需要一键重新构建 Release 版本，在仓库根目录运行：
 
 ```bash
 ./build_release.sh
@@ -67,7 +92,41 @@ cmake --build my_project/build -j
 
 更多关于设备配置、数据流和扩展方式，参见 `my_project/README.md` 与 `my_project/docs`。
 
+## VLM 任务生成
+
+本项目支持通过多模态大模型自动生成任务模板（用于指导录制过程），相关配置位于 `my_project/resources/config.json` 的 `vlm` 字段：
+
+- `model`：后端使用的模型名称（取决于实际服务实现）。
+- `endpoint`：兼容 OpenAI Chat Completions 的 HTTP 接口地址。
+- `prompt_path`：用于构造系统提示词的文本文件路径（通常为 `resources/prompts/vlm_task_prompt.txt`）。
+- `api_key`：访问 VLM 服务的密钥（推荐留空，改用环境变量）。
+
+运行时，应用会按以下顺序获取 API key：
+- 首选 `config.json` 中的 `vlm.api_key`；
+- 若为空，则尝试读取环境变量 `GPT_API_KEY`。
+
+出于安全考虑，协作开发时推荐：
+- 在 `config.json` 中使用占位符（例如 `"api_key": ""`），
+- 实际密钥通过本地环境变量 `GPT_API_KEY` 提供，并避免提交到 Git。
+
+VLM 生成的任务模板会被保存为：
+- `my_project/resources/logs/vlm_output.json`
+
+GUI 中的 “Generate Task (VLM)” 按钮会调用该流程，成功后即可在任务选择面板中使用生成的模板。
+
+## 测试
+
+在完成构建后，可以在仓库根目录执行：
+
+```bash
+ctest --test-dir my_project/build --output-on-failure
+```
+
+用于运行 C++ 单元测试，建议在提交前保持测试通过。
+
 ## IndexTTS 子模块与权重
+
+如果不需要在本地运行tts服务，可以跳过本节。
 
 本仓库使用 IndexTTS 作为语音提示引擎，对应子模块位于 `index-tts-vllm/`。
 
@@ -159,9 +218,22 @@ basePath/
 
 更多细节请参考 `my_project/README.md` 与 `my_project/docs` 中的设计与示例。
 
+## VIVE tracker 和 VD Glove
+
+使用局域网发送数据, 分别设置接收端口, 如6666和9999, 然后开启端口防火墙:
+```bash
+sudo ufw allow 9999/udp
+sudo ufw allow 6666/udp
+sudo ufw reload
+```
+
+将 libVDMocapSDK_DataRead.so 放到 my_project/resources/libVDMocapSDK_DataRead.so
+
 ## Git 使用与协作
 
 - 建议默认分支使用 `main`，通过分支 + PR 工作流协作开发。
+- C++ 代码风格：C++17、4 空格缩进，命名与包含顺序等细节请参考根目录 `AGENTS.md`。
+- 第三方子模块（如 `index-tts-vllm/`）与 SDK 目录（如 `librealsense/`）通常不直接改动，如需修改请单独讨论。
 - 提交前请确认：
   - 构建通过：`cmake --build my_project/build -j`
   - 测试通过：`ctest --test-dir my_project/build --output-on-failure`

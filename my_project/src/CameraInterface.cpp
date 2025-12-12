@@ -4,15 +4,21 @@
 
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/videoio.hpp>
 #include <thread>
 #include <iomanip>
 #include <sstream>
 #include <filesystem>
 #include <memory>
+#include <algorithm>
+#include <utility>
+#include <cctype>
 
 #include "Logger.h"
 #include "IntrinsicsManager.h"
 #include "NetworkDevice.h"
+#include "VDGloveInterface.h"
+#include "ViveInterface.h"
 
 namespace
 {
@@ -87,6 +93,7 @@ public:
     }
 
     std::unique_ptr<FrameWriter> makeWriter(const std::string &basePath, Logger &logger) override;
+    CaptureMetadata captureMetadata() const override;
 
 private:
     std::string _model;
@@ -107,6 +114,7 @@ public:
     bool initialize(const CameraConfig &config) override
     {
         _config = config;
+        _alignEnabled = config.alignDepth;
         const int colorWidth = ensurePositive(config.color.width, ensurePositive(config.width, 640));
         const int colorHeight = ensurePositive(config.color.height, ensurePositive(config.height, 480));
         const int colorFps = ensurePositive(config.color.frameRate, ensurePositive(config.frameRate, 30));
@@ -147,6 +155,10 @@ public:
                     sensor.set_option(RS2_OPTION_GLOBAL_TIME_ENABLED, 1.f);
                     _logger.info("Enabled global time sync for sensor %s",
                                  sensor.get_info(RS2_CAMERA_INFO_NAME));
+                }
+                if (auto depthSensor = sensor.as<rs2::depth_sensor>())
+                {
+                    _depthScale = depthSensor.get_depth_scale();
                 }
             }
             if (dev.supports(RS2_CAMERA_INFO_NAME))
@@ -200,6 +212,39 @@ public:
                 data.coeffs.assign(intr.coeffs, intr.coeffs + 5);
                 intrMgr.save(_identifier, data);
             }
+            rs2_extrinsics extrinsics = depthProfile.get_extrinsics_to(colorProfile);
+            _metadata = {};
+            _metadata.deviceId = _identifier;
+            _metadata.model = _cameraName;
+            _metadata.serial = _serial;
+            _metadata.aligned = _alignEnabled;
+            _metadata.depthScale = _depthScale;
+            _metadata.colorFps = colorFps;
+            _metadata.depthFps = depthFps;
+            _metadata.colorFormat = "BGR8";
+            _metadata.depthFormat = "Z16";
+            auto colorIntr = colorProfile.get_intrinsics();
+            _metadata.colorIntrinsics.stream = "color";
+            _metadata.colorIntrinsics.width = colorIntr.width;
+            _metadata.colorIntrinsics.height = colorIntr.height;
+            _metadata.colorIntrinsics.fx = colorIntr.fx;
+            _metadata.colorIntrinsics.fy = colorIntr.fy;
+            _metadata.colorIntrinsics.cx = colorIntr.ppx;
+            _metadata.colorIntrinsics.cy = colorIntr.ppy;
+            _metadata.colorIntrinsics.coeffs.assign(colorIntr.coeffs, colorIntr.coeffs + 5);
+            auto depthIntr = depthProfile.get_intrinsics();
+            _metadata.depthIntrinsics.stream = "depth";
+            _metadata.depthIntrinsics.width = depthIntr.width;
+            _metadata.depthIntrinsics.height = depthIntr.height;
+            _metadata.depthIntrinsics.fx = depthIntr.fx;
+            _metadata.depthIntrinsics.fy = depthIntr.fy;
+            _metadata.depthIntrinsics.cx = depthIntr.ppx;
+            _metadata.depthIntrinsics.cy = depthIntr.ppy;
+            _metadata.depthIntrinsics.coeffs.assign(depthIntr.coeffs, depthIntr.coeffs + 5);
+            std::copy(std::begin(extrinsics.rotation), std::end(extrinsics.rotation),
+                      _metadata.depthToColor.rotation.begin());
+            std::copy(std::begin(extrinsics.translation), std::end(extrinsics.translation),
+                      _metadata.depthToColor.translation.begin());
             return true;
         }
         catch (const rs2::error &e)
@@ -219,9 +264,9 @@ public:
         try
         {
             rs2::frameset frames = _pipeline.wait_for_frames(15000);
-            auto aligned = _align.process(frames);
-            rs2::video_frame color = aligned.get_color_frame();
-            rs2::depth_frame depth = aligned.get_depth_frame();
+            rs2::frameset processed = _alignEnabled ? _align.process(frames) : frames;
+            rs2::video_frame color = processed.get_color_frame();
+            rs2::depth_frame depth = processed.get_depth_frame();
 
             if (!color || !depth)
             {
@@ -243,9 +288,13 @@ public:
         catch (const rs2::error &e)
         {
             _logger.error("RealSense capture failed: %s", e.what());
-            // Attempt a soft restart on timeouts or pipeline errors if still running
+            // Attempt a restart (with optional hardware reset) on timeouts or pipeline errors if still running
             if (_running)
             {
+                const std::string msg = e.what();
+                const bool timeout = msg.find("Frame didn't arrive") != std::string::npos ||
+                                     msg.find("Timeout") != std::string::npos ||
+                                     msg.find("timeout") != std::string::npos;
                 try
                 {
                     _pipeline.stop();
@@ -255,8 +304,15 @@ public:
                 }
                 try
                 {
-                    _pipeline.start(_rsConfig);
-                    _logger.info("RealSense pipeline restarted for %s", name().c_str());
+                    if (timeout && _device)
+                    {
+                        _logger.info("RealSense: hardware reset before restart for %s", name().c_str());
+                        _device.hardware_reset();
+                        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+                    }
+                    auto profile = _pipeline.start(_rsConfig);
+                    _device = profile.get_device();
+                    _logger.info("RealSense pipeline restarted for %s (timeout=%d)", name().c_str(), timeout ? 1 : 0);
                 }
                 catch (const rs2::error &re)
                 {
@@ -327,24 +383,122 @@ public:
     }
 
     std::unique_ptr<FrameWriter> makeWriter(const std::string &basePath, Logger &logger) override;
+    CaptureMetadata captureMetadata() const override;
 
 private:
     Logger &_logger;
     CameraConfig _config;
+    bool _alignEnabled{true};
     rs2::pipeline _pipeline;
     rs2::config _rsConfig;
     rs2::align _align;
+    rs2::device _device;
+    double _depthScale{0.0};
     bool _running{false};
     std::string _cameraName{"RealSense"};
     std::string _serial;
     std::string _identifier;
+    CaptureMetadata _metadata;
+};
+
+class WebcamCamera : public CameraInterface
+{
+public:
+    explicit WebcamCamera(Logger &logger)
+        : _logger(logger)
+    {
+    }
+
+    bool initialize(const CameraConfig &config) override
+    {
+        _config = config;
+        const int index = config.id;
+        const int colorWidth = ensurePositive(config.color.width, ensurePositive(config.width, 640));
+        const int colorHeight = ensurePositive(config.color.height, ensurePositive(config.height, 480));
+        const int colorFps = ensurePositive(config.color.frameRate, ensurePositive(config.frameRate, 30));
+        _config.color.width = colorWidth;
+        _config.color.height = colorHeight;
+        _config.color.frameRate = colorFps;
+        _capture.open(index);
+        if (!_capture.isOpened())
+        {
+            _logger.error("Webcam %d failed to open", index);
+            return false;
+        }
+        if (colorWidth > 0)
+            _capture.set(cv::CAP_PROP_FRAME_WIDTH, colorWidth);
+        if (colorHeight > 0)
+            _capture.set(cv::CAP_PROP_FRAME_HEIGHT, colorHeight);
+        if (colorFps > 0)
+            _capture.set(cv::CAP_PROP_FPS, colorFps);
+        _label = "Webcam#" + std::to_string(index);
+        _running = true;
+        return true;
+    }
+
+    FrameData captureFrame() override
+    {
+        FrameData data;
+        if (!_running)
+            return data;
+        cv::Mat frame;
+        if (!_capture.read(frame))
+        {
+            _logger.warn("Webcam %s read failed", _label.c_str());
+            return data;
+        }
+        data.image = frame.clone();
+        data.timestamp = std::chrono::system_clock::now();
+        data.deviceTimestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                     std::chrono::steady_clock::now().time_since_epoch())
+                                     .count();
+        data.cameraId = _label;
+        return data;
+    }
+
+    void close() override
+    {
+        if (_capture.isOpened())
+            _capture.release();
+        _running = false;
+    }
+
+    std::string name() const override { return _label.empty() ? "Webcam" : _label; }
+
+    std::unique_ptr<FrameWriter> makeWriter(const std::string &basePath, Logger &logger) override
+    {
+        return makePngWriter(name(), basePath, logger);
+    }
+
+    CaptureMetadata captureMetadata() const override
+    {
+        CaptureMetadata meta;
+        meta.deviceId = _label;
+        meta.model = "Webcam";
+        meta.aligned = false;
+        meta.colorFormat = "BGR8";
+        meta.colorIntrinsics.stream = "color";
+        meta.colorIntrinsics.width = ensurePositive(_config.color.width, ensurePositive(_config.width, 640));
+        meta.colorIntrinsics.height = ensurePositive(_config.color.height, ensurePositive(_config.height, 480));
+        meta.colorFps = ensurePositive(_config.color.frameRate, ensurePositive(_config.frameRate, 30));
+        return meta;
+    }
+
+private:
+    Logger &_logger;
+    CameraConfig _config;
+    cv::VideoCapture _capture;
+    bool _running{false};
+    std::string _label;
 };
 } // namespace
 
 class PngFrameWriter : public FrameWriter
 {
 public:
-    PngFrameWriter(const std::string &deviceId, const std::string &basePath, Logger &logger)
+    PngFrameWriter(const std::string &deviceId,
+                   const std::string &basePath,
+                   Logger &logger)
         : _deviceId(deviceId), _basePath(basePath), _logger(logger)
     {
     }
@@ -449,6 +603,13 @@ std::unique_ptr<CameraInterface> createCamera(const CameraConfig &config, Logger
         return std::make_unique<SimulatedCamera>("RGB", logger);
     if (config.type == "Network")
         return std::make_unique<NetworkDevice>(logger);
+    if (config.type == "Webcam")
+        return std::make_unique<WebcamCamera>(logger);
+    if (config.type == "VDGlove")
+        return createGloveDevice(config.type, logger);
+    if (config.type == "Vive" || config.type == "ViveTracker")
+        return createViveDevice(logger);
+
     logger.warn("Unknown camera type '%s', defaulting to RGB", config.type.c_str());
     return std::make_unique<SimulatedCamera>("RGB", logger);
 }
@@ -458,7 +619,28 @@ std::unique_ptr<FrameWriter> SimulatedCamera::makeWriter(const std::string &base
     return makePngWriter(_label, basePath, logger);
 }
 
+CaptureMetadata SimulatedCamera::captureMetadata() const
+{
+    CaptureMetadata meta;
+    meta.deviceId = _label;
+    meta.model = _model;
+    meta.aligned = false;
+    meta.colorFormat = "BGR8";
+    meta.colorIntrinsics.stream = "color";
+    meta.colorIntrinsics.width = ensurePositive(_config.color.width, ensurePositive(_config.width, 640));
+    meta.colorIntrinsics.height = ensurePositive(_config.color.height, ensurePositive(_config.height, 480));
+    meta.colorFps = ensurePositive(_config.color.frameRate, ensurePositive(_config.frameRate, 30));
+    return meta;
+}
+
 std::unique_ptr<FrameWriter> RealSenseCamera::makeWriter(const std::string &basePath, Logger &logger)
 {
     return makePngWriter(name(), basePath, logger);
+}
+
+CaptureMetadata RealSenseCamera::captureMetadata() const
+{
+    CaptureMetadata meta = _metadata;
+    meta.aligned = _alignEnabled;
+    return meta;
 }

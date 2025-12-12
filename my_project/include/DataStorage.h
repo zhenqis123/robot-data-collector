@@ -8,6 +8,8 @@
 #include <optional>
 #include <vector>
 
+#include "CameraInterface.h"
+
 class Logger;
 
 class DataStorage
@@ -17,7 +19,8 @@ public:
 
     void beginRecording(const std::string &captureName,
                         const std::string &subject,
-                        const std::string &basePath);
+                        const std::string &basePath,
+                        const std::vector<CaptureMetadata> &cameraMetas);
     void endRecording();
 
     std::string basePath() const { return _basePath; }
@@ -26,6 +29,7 @@ public:
                           const std::string &templatePath,
                           const std::string &templateVersion,
                           const std::string &source);
+    void setVlmPrompt(const std::string &path, const std::string &content);
 
     struct StepOverride
     {
@@ -63,8 +67,11 @@ private:
     std::string _taskTemplatePath;
     std::string _taskTemplateVersion;
     std::string _taskSource{"script"};
+    std::string _vlmPromptPath;
+    std::string _vlmPromptContent;
     std::chrono::system_clock::time_point _sessionStart;
     bool _sessionActive{false};
+    std::vector<CaptureMetadata> _cameraMetas;
     std::ofstream _eventStream;
     std::ofstream _annotationStream;
 

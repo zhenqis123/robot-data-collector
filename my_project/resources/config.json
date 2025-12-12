@@ -10,30 +10,22 @@
     "enabled": true,
     "mode": "IndexTTS",
     "volume": 100,
-    "piper": {
-      "voice_onnx": "/home/xiziheng/develop/data_collector/my_project/resources/voice/en_US-amy-medium.onnx",
-      "voice_config": "/home/xiziheng/develop/data_collector/my_project/resources/voice/en_US-amy-medium.onnx.json",
-      "voice_onnx_cn": "/home/xiziheng/develop/data_collector/my_project/resources/voice/zh_CN-huayan-medium.onnx",
-      "voice_config_cn": "/home/xiziheng/develop/data_collector/my_project/resources/voice/zh_CN-huayan-medium.onnx.json",
-      "espeak_data": "/home/xiziheng/develop/data_collector/piper1-gpl/libpiper/install/espeak-ng-data",
-      "sample_rate": 22050
-    },
     "index_tts": {
       "endpoint": "http://192.168.20.173:6006/tts_url",
       "audio_paths": ["/home/zc/robot-data-collector/index-tts-vllm/assets/jay_promptvn.wav"]
     },
     "texts": {
-      "start": "Recording started. Task {task_id}. Step {step_id}: {step_desc}.",
-      "next_step": "Next step {step_id}: {step_desc}.",
-      "complete": "Task completed.",
-      "abort": "Task aborted.",
-      "error": "Error noted.",
-      "skip": "Skip current step.",
-      "retry": "Retry current step.",
-      "stop_running": "Recording stopped. Task interrupted.",
-      "stop_completed": "Recording stopped. Task completed.",
-      "vlm_success": "Task generated successfully.",
-      "vlm_fail": "Task generation failed. Please retry."
+      "start": "录制开始。任务{task_id}，步骤{step_id}：{step_desc}。",
+      "next_step": "下一步 {step_id}：{step_desc}。",
+      "complete": "本轮任务已完成，返回开头继续。",
+      "abort": "任务已中止。",
+      "error": "记录异常。",
+      "skip": "已跳过当前步骤。",
+      "retry": "正在重试当前步骤。",
+      "stop_running": "录制已停止，任务中断。",
+      "stop_completed": "录制已停止，任务完成。",
+      "vlm_success": "任务生成成功。",
+      "vlm_fail": "任务生成失败，请重试。"
     },
     "keybindings": {
       "advance": "S",
@@ -47,6 +39,8 @@
     {
       "type": "RealSense",
       "id": 0,
+      "serial": "017322074878", 
+      "align_depth": false,
       "color": {
         "resolution": "640x480",
         "frame_rate": 30
@@ -57,28 +51,20 @@
       }
     },
     {
-      "type": "RealSense",
-      "id": 1,
-      "color": {
-        "resolution": "1280x720",
-        "frame_rate": 30
-      },
-      "depth": {
-        "resolution": "1280x720",
-        "frame_rate": 30
-      }
+      "type": "VDGlove",
+      "id": 3,
+      "server_ip": "192.168.20.240",
+      "server_port": 9998,
+      "local_port": 9999,
+      "device_index": 0,
+      "process_mano": true,
+      "target_fps": 30.0
     },
     {
-      "type": "RealSense",
-      "id": 2,
-      "color": {
-        "resolution": "1280x720",
-        "frame_rate": 30
-      },
-      "depth": {
-        "resolution": "1280x720",
-        "frame_rate": 30
-      }
+      "type": "Vive",
+      "id": 4,
+      "port": 6666,
+      "target_fps": 60.0
     }
   ],
   "aruco_targets": [

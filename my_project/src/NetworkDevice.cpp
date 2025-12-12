@@ -57,8 +57,21 @@ std::string NetworkDevice::name() const
     return _label;
 }
 
+CaptureMetadata NetworkDevice::captureMetadata() const
+{
+    CaptureMetadata meta;
+    meta.deviceId = _label;
+    meta.model = "Network";
+    meta.aligned = false;
+    meta.colorFormat = "BGR8";
+    meta.colorIntrinsics.stream = "color";
+    meta.colorIntrinsics.width = _config.width;
+    meta.colorIntrinsics.height = _config.height;
+    meta.colorFps = _config.frameRate;
+    return meta;
+}
+
 std::unique_ptr<FrameWriter> NetworkDevice::makeWriter(const std::string &basePath, Logger &logger)
 {
     return makePngWriter(_label, basePath, logger);
 }
-

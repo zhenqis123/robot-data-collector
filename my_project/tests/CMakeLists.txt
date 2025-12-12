@@ -5,6 +5,8 @@ file(GLOB TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
 
 add_executable(unit_tests ${TEST_SOURCES}
     ${PROJECT_SOURCE_DIR}/src/CameraInterface.cpp
+    ${PROJECT_SOURCE_DIR}/src/VDGloveDevice.cpp
+    ${PROJECT_SOURCE_DIR}/src/ViveDevice.cpp
     ${PROJECT_SOURCE_DIR}/src/DataCapture.cpp
     ${PROJECT_SOURCE_DIR}/src/DataStorage.cpp
     ${PROJECT_SOURCE_DIR}/src/NetworkDevice.cpp
