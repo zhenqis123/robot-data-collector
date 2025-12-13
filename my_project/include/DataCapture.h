@@ -59,6 +59,14 @@ public:
     bool isPaused() const { return _paused.load(); }
     std::vector<std::string> deviceIds() const;
 
+    /**
+     * @brief 校准 TacGlove 偏移量
+     *
+     * 以当前原始数据为新的偏移量基准，用于消除手套噪声
+     * @return 至少有一个设备成功校准返回 true
+     */
+    bool calibrateTacGloveOffsets();
+
 private:
     struct CaptureItem
     {

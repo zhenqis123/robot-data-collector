@@ -63,6 +63,7 @@ private slots:
     void onTaskSelectionChanged(int index);
     void onModeChanged(int index);
     void onGenerateVlmTask();
+    void onClearTacOffsets();
 
 private:
     Logger _logger;
@@ -87,6 +88,7 @@ private:
     QPushButton *_skipButton{nullptr};
     QPushButton *_retryButton{nullptr};
     QPushButton *_abortButton{nullptr};
+    QPushButton *_clearTacButton{nullptr};
     QComboBox *_modeSelect{nullptr};
     QPushButton *_applySettingsButton{nullptr};
     QLineEdit *_captureNameEdit{nullptr};
@@ -153,6 +155,7 @@ private:
     QGroupBox *createTaskSelectionGroup();
     QGroupBox *createVlmGroup();
     QGroupBox *createCameraControlGroup();
+    QGroupBox *createTacGloveGroup();
     QGroupBox *createCaptureControlGroup();
     QGroupBox *createPromptControlGroup();
     QGroupBox *createCameraSettingsGroup();

@@ -238,6 +238,14 @@ public:
      */
     virtual std::unique_ptr<TacGloveDualWriter> makeWriter(const std::string &basePath,
                                                            Logger &logger) = 0;
+
+    /**
+     * @brief 以当前原始数据为基准，重新校准左右手的偏移量
+     *
+     * 仅当当前帧非缺失（非全-1）时才更新对应手的偏移值
+     * @return 至少有一只手成功更新返回 true
+     */
+    virtual bool calibrateOffsets() = 0;
 };
 
 /**
@@ -260,6 +268,7 @@ public:
     TacGloveMode mode() const override;
     std::unique_ptr<TacGloveDualWriter> makeWriter(const std::string &basePath,
                                                    Logger &logger) override;
+    bool calibrateOffsets() override { return true; }  // 模拟设备无需校准
 
     static constexpr int kVectorDimension = 137;
     static constexpr float kMissingValue = -1.0f;
@@ -335,6 +344,7 @@ public:
     TacGloveMode mode() const override;
     std::unique_ptr<TacGloveDualWriter> makeWriter(const std::string &basePath,
                                                    Logger &logger) override;
+    bool calibrateOffsets() override;
 
     /**
      * @brief 检查共享内存是否可用
@@ -377,6 +387,13 @@ private:
     std::string _deviceId;
     TacGloveMode _mode{TacGloveMode::Both};
     bool _initialized{false};
+
+    // 偏移量校准相关
+    std::vector<float> _offsetLeft;   // 左手偏移量（137维，初始化为0）
+    std::vector<float> _offsetRight;  // 右手偏移量（137维，初始化为0）
+    mutable std::mutex _offsetMutex;  // 保护偏移量的互斥锁
+    void applyOffsets(TacGloveDualFrameData &frame);  // 应用偏移量
+    void resetOffsets();  // 重置偏移量为0
 
     // 共享内存相关
     int _shmFd{-1};

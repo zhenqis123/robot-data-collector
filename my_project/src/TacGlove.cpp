@@ -394,6 +394,7 @@ std::unique_ptr<TacGloveInterface> createTacGlove(const std::string &type, Logge
 LocalTacGlove::LocalTacGlove(Logger &logger)
     : _logger(logger)
 {
+    resetOffsets();
 }
 
 LocalTacGlove::~LocalTacGlove()
@@ -494,6 +495,9 @@ bool LocalTacGlove::initialize(const std::string &deviceId, TacGloveMode mode)
     _mode = mode;
     const std::string modeStr = tacGloveModeToString(mode);
     _deviceId = deviceId.empty() ? ("LocalTacGlove_" + modeStr + "#0") : deviceId;
+
+    // 重置偏移量
+    resetOffsets();
 
     // 尝试打开共享内存
     if (!openSharedMemory())
@@ -685,6 +689,9 @@ TacGloveDualFrameData LocalTacGlove::captureFrame(
         dualFrame.rightFrame.isMissing = true;
     }
 
+    // 应用偏移量校准（仅对非缺失数据）
+    applyOffsets(dualFrame);
+
     return dualFrame;
 }
 
@@ -709,4 +716,94 @@ std::unique_ptr<TacGloveDualWriter> LocalTacGlove::makeWriter(const std::string 
                                                               Logger &logger)
 {
     return makeTacGloveDualWriter(_deviceId, basePath, logger);
+}
+
+bool LocalTacGlove::calibrateOffsets()
+{
+    // 读取当前原始帧（不减偏移量的原始数据）
+    TacGloveFrameData leftRaw;
+    TacGloveFrameData rightRaw;
+    bool leftUpdated = false;
+    bool rightUpdated = false;
+
+    const bool needLeft = (_mode == TacGloveMode::Both || _mode == TacGloveMode::LeftOnly);
+    const bool needRight = (_mode == TacGloveMode::Both || _mode == TacGloveMode::RightOnly);
+
+    // 尝试读取左手数据
+    if (needLeft && readFrameFromQueue(true, leftRaw) && !leftRaw.isMissing &&
+        leftRaw.data.size() == static_cast<size_t>(kVectorDimension))
+    {
+        leftUpdated = true;
+    }
+
+    // 尝试读取右手数据
+    if (needRight && readFrameFromQueue(false, rightRaw) && !rightRaw.isMissing &&
+        rightRaw.data.size() == static_cast<size_t>(kVectorDimension))
+    {
+        rightUpdated = true;
+    }
+
+    if (leftUpdated || rightUpdated)
+    {
+        std::lock_guard<std::mutex> lock(_offsetMutex);
+        if (leftUpdated)
+        {
+            // 新偏移量 = 当前原始值 + 旧偏移量（因为读到的是已减偏移的值，需还原）
+            // 但这里 readFrameFromQueue 读到的是未减偏移的原始值，所以直接用
+            _offsetLeft = leftRaw.data;
+        }
+        if (rightUpdated)
+        {
+            _offsetRight = rightRaw.data;
+        }
+        _logger.info("LocalTacGlove: offsets calibrated (left=%s, right=%s)",
+                     leftUpdated ? "yes" : "no",
+                     rightUpdated ? "yes" : "no");
+        return true;
+    }
+
+    _logger.warn("LocalTacGlove: calibration skipped (no valid non-missing frames available)");
+    return false;
+}
+
+void LocalTacGlove::applyOffsets(TacGloveDualFrameData &frame)
+{
+    std::vector<float> leftOffset;
+    std::vector<float> rightOffset;
+    {
+        std::lock_guard<std::mutex> lock(_offsetMutex);
+        leftOffset = _offsetLeft;
+        rightOffset = _offsetRight;
+    }
+
+    // 对非缺失的左手数据应用偏移量
+    if (!frame.leftFrame.isMissing && 
+        frame.leftFrame.data.size() == leftOffset.size())
+    {
+        for (size_t i = 0; i < frame.leftFrame.data.size(); ++i)
+        {
+            frame.leftFrame.data[i] -= leftOffset[i];
+            if (frame.leftFrame.data[i] < 0.0f)
+                frame.leftFrame.data[i] = 0.0f;
+        }
+    }
+
+    // 对非缺失的右手数据应用偏移量
+    if (!frame.rightFrame.isMissing && 
+        frame.rightFrame.data.size() == rightOffset.size())
+    {
+        for (size_t i = 0; i < frame.rightFrame.data.size(); ++i)
+        {
+            frame.rightFrame.data[i] -= rightOffset[i];
+            if (frame.rightFrame.data[i] < 0.0f)
+                frame.rightFrame.data[i] = 0.0f;
+        }
+    }
+}
+
+void LocalTacGlove::resetOffsets()
+{
+    std::lock_guard<std::mutex> lock(_offsetMutex);
+    _offsetLeft.assign(kVectorDimension, 0.0f);
+    _offsetRight.assign(kVectorDimension, 0.0f);
 }

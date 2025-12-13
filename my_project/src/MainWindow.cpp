@@ -112,6 +112,7 @@ void MainWindow::setupUi()
     controlsLayout->addWidget(createTaskSelectionGroup());
     controlsLayout->addWidget(createVlmGroup());
     controlsLayout->addWidget(createCameraControlGroup());
+    controlsLayout->addWidget(createTacGloveGroup());
     controlsLayout->addWidget(createAuxDeviceGroup());
     controlsLayout->addWidget(createCaptureControlGroup());
     controlsLayout->addWidget(createPromptControlGroup());
@@ -178,6 +179,10 @@ void MainWindow::updateControls()
     // Let's allow changing save status only when not recording to avoid confusion
     _chkSaveGlove->setEnabled(!recording);
     _chkSaveVive->setEnabled(!recording);
+
+    // TacGlove calibration requires capture running
+    if (_clearTacButton)
+        _clearTacButton->setEnabled(hasCapture);
 
     if (_vlmCameraSelect)
     {
@@ -314,6 +319,7 @@ void MainWindow::connectSignals()
 {
     connect(_openButton, &QPushButton::clicked, this, &MainWindow::onOpenCameras);
     connect(_closeButton, &QPushButton::clicked, this, &MainWindow::onCloseCameras);
+    connect(_clearTacButton, &QPushButton::clicked, this, &MainWindow::onClearTacOffsets);
     connect(_startCaptureButton, &QPushButton::clicked, this, &MainWindow::onStartRecording);
     connect(_stopCaptureButton, &QPushButton::clicked, this, &MainWindow::onStopRecording);
     connect(_pauseButton, &QPushButton::clicked, this, &MainWindow::onPauseRecording);
@@ -412,6 +418,16 @@ QGroupBox *MainWindow::createCameraControlGroup()
     _closeButton = new QPushButton("Close");
     layout->addWidget(_openButton);
     layout->addWidget(_closeButton);
+    return box;
+}
+
+QGroupBox *MainWindow::createTacGloveGroup()
+{
+    auto *box = new QGroupBox(tr("TacGloves"), _controlPanel);
+    auto *layout = new QHBoxLayout(box);
+    _clearTacButton = new QPushButton(tr("clear initial tac"));
+    layout->addWidget(_clearTacButton);
+    layout->addStretch();
     return box;
 }
 
@@ -1464,6 +1480,26 @@ void MainWindow::onCloseCameras()
     }
     populateAvailableProfiles();
     updateControls();
+}
+
+void MainWindow::onClearTacOffsets()
+{
+    if (!_capture || !_capture->isRunning())
+    {
+        QMessageBox::information(this, tr("TacGloves"), 
+            tr("Please open cameras before calibrating TacGlove offsets."));
+        return;
+    }
+
+    const bool updated = _capture->calibrateTacGloveOffsets();
+    if (updated)
+    {
+        _statusLabel->setText("TacGlove offsets calibrated");
+    }
+    else
+    {
+        _statusLabel->setText("TacGlove calibration: no valid data");
+    }
 }
 
 void MainWindow::onStartRecording()

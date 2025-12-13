@@ -438,3 +438,25 @@ void DataCapture::tacGloveStorageLoop(TacGloveContext *ctx)
         }
     }
 }
+
+bool DataCapture::calibrateTacGloveOffsets()
+{
+    bool updated = false;
+    for (auto &ctxPtr : _tacGloves)
+    {
+        if (ctxPtr && ctxPtr->device)
+        {
+            if (ctxPtr->device->calibrateOffsets())
+                updated = true;
+        }
+    }
+    if (updated)
+    {
+        _logger.info("TacGlove calibration: offsets refreshed");
+    }
+    else
+    {
+        _logger.warn("TacGlove calibration: no valid data available");
+    }
+    return updated;
+}
