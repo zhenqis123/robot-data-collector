@@ -33,9 +33,10 @@
     "keybindings": {
       "step_start": "S",
       "step_end": "D",
-      "pause_toggle": "Space",
+      "pause_toggle": "P",
       "retry": "R",
-      "skip": "K"
+      "skip": "K",
+      "keyframe": "Space"
     }
   },
   "cameras": [
