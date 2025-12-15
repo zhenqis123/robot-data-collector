@@ -170,6 +170,8 @@ void MainWindow::updateControls()
     _endStepButton->setEnabled(recording);
     _retryButton->setEnabled(taskActive);
     _skipButton->setEnabled(taskActive);
+    if (_keyframeButton)
+        _keyframeButton->setEnabled(recording);
     if (_vlmCameraSelect)
     {
         _vlmCameraSelect->clear();
@@ -313,6 +315,7 @@ void MainWindow::connectSignals()
     connect(_endStepButton, &QPushButton::clicked, this, &MainWindow::onEndStep);
     connect(_retryButton, &QPushButton::clicked, this, &MainWindow::onRetryStep);
     connect(_skipButton, &QPushButton::clicked, this, &MainWindow::onSkipStep);
+    connect(_keyframeButton, &QPushButton::clicked, this, &MainWindow::onMarkKeyframe);
     connect(_cameraSelect, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onCameraSelectionChanged);
     connect(_applySettingsButton, &QPushButton::clicked, this, &MainWindow::onApplyCameraSettings);
@@ -417,6 +420,7 @@ QGroupBox *MainWindow::createCaptureControlGroup()
     _endStepButton = new QPushButton(tr("结束步骤 / End Step"));
     _skipButton = new QPushButton(tr("跳过 / Skip"));
     _retryButton = new QPushButton(tr("重试 / Retry"));
+    _keyframeButton = new QPushButton(tr("关键帧 / Keyframe"));
     grid->addWidget(_startCaptureButton, 0, 0);
     grid->addWidget(_stopCaptureButton, 0, 1);
     grid->addWidget(_pauseButton, 1, 0);
@@ -425,6 +429,7 @@ QGroupBox *MainWindow::createCaptureControlGroup()
     grid->addWidget(_endStepButton, 2, 1);
     grid->addWidget(_retryButton, 3, 0);
     grid->addWidget(_skipButton, 3, 1);
+    grid->addWidget(_keyframeButton, 4, 0, 1, 2);
     return box;
 }
 
@@ -1383,6 +1388,11 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
                 onPauseRecording();
         }
     }
+    else if (matchKey("keyframe"))
+    {
+        if (!throttleTrigger("keyframe", 200))
+            onMarkKeyframe();
+    }
     else if (matchKey("skip"))
     {
         if (!throttleTrigger("skip", 300))
@@ -1717,6 +1727,18 @@ void MainWindow::onRetryStep()
     _storage.logEvent("step_retry");
     _audioPlayer.play("retry");
     logAnnotation("button_retry");
+}
+
+void MainWindow::onMarkKeyframe()
+{
+    if (!_capture || !_capture->isRecording())
+    {
+        _logger.warn("Keyframe ignored: not recording");
+        return;
+    }
+    _storage.logEvent("keyframe");
+    logAnnotation("keyframe");
+    _logger.info("Keyframe marked");
 }
 
 void MainWindow::onSkipStep()
