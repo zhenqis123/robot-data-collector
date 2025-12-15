@@ -493,62 +493,126 @@ class PngFrameWriter : public FrameWriter
 public:
     PngFrameWriter(const std::string &deviceId,
                    const std::string &basePath,
-                   Logger &logger)
-        : _deviceId(deviceId), _basePath(basePath), _logger(logger)
+                   Logger &logger,
+                   size_t threadCount = std::thread::hardware_concurrency())
+        : _deviceId(deviceId),
+          _basePath(basePath),
+          _logger(logger),
+          _threadCount(threadCount == 0 ? 1 : threadCount)
     {
+        const auto sanitized = sanitize(_deviceId);
+        _cameraDir = std::filesystem::path(_basePath) / sanitized;
+        std::error_code ec;
+        std::filesystem::create_directories(_cameraDir / "color", ec);
+        std::filesystem::create_directories(_cameraDir / "depth", ec);
+        _workers.reserve(_threadCount);
+        for (size_t i = 0; i < _threadCount; ++i)
+            _workers.emplace_back(&PngFrameWriter::worker, this);
+    }
+
+    ~PngFrameWriter()
+    {
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            _stopped = true;
+        }
+        _cv.notify_all();
+        for (auto &t : _workers)
+        {
+            if (t.joinable())
+                t.join();
+        }
+        if (_tsStream.is_open())
+        {
+            _tsStream.flush();
+            _tsStream.close();
+        }
     }
 
     bool write(const FrameData &frame) override
     {
         if (frame.image.empty() || _basePath.empty())
             return false;
-        std::lock_guard<std::mutex> lock(_mutex);
-        const auto sanitized = sanitize(_deviceId);
-        const auto cameraDir = std::filesystem::path(_basePath) / sanitized;
-        std::error_code ec;
-        std::filesystem::create_directories(cameraDir / "color", ec);
-        if (!frame.depth.empty())
-            std::filesystem::create_directories(cameraDir / "depth", ec);
 
-        ++_frameIndex;
-        std::ostringstream ss;
-        ss << std::setw(6) << std::setfill('0') << _frameIndex;
-        const auto frameName = ss.str();
+        FrameData copy;
+        copy.image = frame.image.clone();
+        copy.depth = frame.depth.clone();
+        copy.timestamp = frame.timestamp;
+        copy.deviceTimestampMs = frame.deviceTimestampMs;
+        copy.cameraId = frame.cameraId;
 
-        const auto colorPath = (cameraDir / "color" / (frameName + ".png")).string();
-        bool ok = cv::imwrite(colorPath, frame.image);
-        std::string depthRel;
-        if (!frame.depth.empty())
         {
-            const auto depthPath = (cameraDir / "depth" / (frameName + ".png")).string();
-            ok = ok && cv::imwrite(depthPath, frame.depth);
-            depthRel = (std::filesystem::path("depth") / (frameName + ".png")).string();
+            std::lock_guard<std::mutex> lock(_mutex);
+            _queue.push(std::move(copy));
         }
-        if (!ok)
-        {
-            _logger.error("Failed to store frame for %s", _deviceId.c_str());
-            return false;
-        }
-
-        if (!_tsStream.is_open())
-        {
-            auto filePath = cameraDir / "timestamps.csv";
-            const bool existed = std::filesystem::exists(filePath);
-            _tsStream.open(filePath.string(), std::ios::out | std::ios::app);
-            if (!existed)
-            {
-                _tsStream << "timestamp_iso,timestamp_ms,device_timestamp_ms,color_path,depth_path\n";
-            }
-        }
-        const auto iso = toIso(frame.timestamp);
-        const auto tsMs = std::chrono::duration_cast<std::chrono::milliseconds>(frame.timestamp.time_since_epoch()).count();
-        const auto colorRel = (std::filesystem::path("color") / (frameName + ".png")).string();
-        _tsStream << iso << "," << tsMs << "," << frame.deviceTimestampMs << "," << colorRel << "," << depthRel << "\n";
-        _tsStream.flush();
+        _cv.notify_one();
         return true;
     }
 
 private:
+    struct WorkItem
+    {
+        FrameData frame;
+        uint64_t index{0};
+    };
+
+    void worker()
+    {
+        while (true)
+        {
+            FrameData frame;
+            uint64_t idx = 0;
+            {
+                std::unique_lock<std::mutex> lock(_mutex);
+                _cv.wait(lock, [&]() { return !_queue.empty() || _stopped; });
+                if (_stopped && _queue.empty())
+                    break;
+                frame = std::move(_queue.front());
+                _queue.pop();
+                idx = ++_frameIndex;
+            }
+
+            std::ostringstream ss;
+            ss << std::setw(6) << std::setfill('0') << idx;
+            const auto frameName = ss.str();
+            const auto colorPath = (_cameraDir / "color" / (frameName + ".png")).string();
+            std::string depthRel;
+
+            std::vector<int> params = {cv::IMWRITE_PNG_COMPRESSION, 0};
+            bool ok = cv::imwrite(colorPath, frame.image, params);
+            if (!frame.depth.empty())
+            {
+                const auto depthPath = (_cameraDir / "depth" / (frameName + ".png")).string();
+                ok = ok && cv::imwrite(depthPath, frame.depth, params);
+                depthRel = (std::filesystem::path("depth") / (frameName + ".png")).string();
+            }
+            if (!ok)
+            {
+                _logger.error("Failed to store frame for %s", _deviceId.c_str());
+                continue;
+            }
+
+            const auto iso = toIso(frame.timestamp);
+            const auto tsMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                  frame.timestamp.time_since_epoch())
+                                  .count();
+            const auto colorRel = (std::filesystem::path("color") / (frameName + ".png")).string();
+            {
+                std::lock_guard<std::mutex> lock(_tsMutex);
+                if (!_tsStream.is_open())
+                {
+                    auto filePath = _cameraDir / "timestamps.csv";
+                    const bool existed = std::filesystem::exists(filePath);
+                    _tsStream.open(filePath.string(), std::ios::out | std::ios::app);
+                    if (!existed)
+                        _tsStream << "timestamp_iso,timestamp_ms,device_timestamp_ms,color_path,depth_path\n";
+                }
+                _tsStream << iso << "," << tsMs << "," << frame.deviceTimestampMs << "," << colorRel << "," << depthRel
+                          << "\n";
+            }
+        }
+    }
+
     static std::string sanitize(std::string value)
     {
         for (auto &ch : value)
@@ -580,7 +644,14 @@ private:
     Logger &_logger;
     std::ofstream _tsStream;
     uint64_t _frameIndex{0};
+    std::mutex _tsMutex;
     std::mutex _mutex;
+    std::condition_variable _cv;
+    std::queue<FrameData> _queue;
+    std::vector<std::thread> _workers;
+    bool _stopped{false};
+    size_t _threadCount{1};
+    std::filesystem::path _cameraDir;
 };
 
 std::unique_ptr<FrameWriter> makePngWriter(const std::string &deviceId,
