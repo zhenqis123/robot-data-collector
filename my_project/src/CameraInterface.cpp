@@ -18,6 +18,9 @@
 #include "IntrinsicsManager.h"
 #include "NetworkDevice.h"
 
+#include <condition_variable>
+#include <queue>
+
 namespace
 {
 int ensurePositive(int value, int fallback)
