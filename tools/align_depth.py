@@ -22,10 +22,23 @@ import numpy as np
 from tqdm import tqdm
 import concurrent.futures
 from functools import lru_cache
+import os
 
 
-def find_meta_files(root: Path) -> List[Path]:
-    return [p for p in root.rglob("meta.json") if p.is_file()]
+def find_meta_files(root: Path, max_depth: int) -> List[Path]:
+    result = []
+    
+    # 使用 tqdm 包装 os.walk 进度条显示
+    for dirpath, dirnames, filenames in tqdm(os.walk(root), desc="Searching for meta.json files", unit="dir"):
+        # 计算当前目录的深度
+        depth = len(Path(dirpath).relative_to(root).parts)
+        if depth > max_depth:
+            continue  # 如果超过最大深度，跳过该目录
+        for filename in filenames:
+            if filename == "meta.json":
+                result.append(Path(dirpath) / filename)
+    
+    return result
 
 
 def load_meta(meta_path: Path) -> Dict:
@@ -178,7 +191,7 @@ def main():
     parser.add_argument("--workers", type=int, default=4, help="Worker threads for alignment")
     args = parser.parse_args()
     root = Path(args.root).expanduser().resolve()
-    metas = find_meta_files(root)
+    metas = find_meta_files(root, 2)
     if not metas:
         print("No meta.json found")
         return
