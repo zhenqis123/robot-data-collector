@@ -209,7 +209,12 @@ MainWindow::CaptureInfo MainWindow::gatherCaptureInfo() const
     std::strftime(timeBuf, sizeof(timeBuf), "%Y%m%d_%H%M%S", &tm);
     const std::string sessionId = std::string("sess_") + timeBuf;
 
-    std::filesystem::path base(_defaultCaptureRoot);
+    std::string baseRoot = _savePathEdit ? _savePathEdit->text().trimmed().toStdString() : "";
+    if (baseRoot.empty())
+        baseRoot = _defaultCaptureRoot;
+    std::filesystem::path base(baseRoot);
+    if (base.is_relative())
+        base = std::filesystem::path(_defaultCaptureRoot) / base;
     base /= dateBuf;
     base /= sessionId;
     info.path = base.string();

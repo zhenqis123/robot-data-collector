@@ -15,7 +15,7 @@ def main() -> None:
       2) Ensure 'voice' below exists in assets/speaker.json.
     """
 
-    url = "http://192.168.20.173:6006/audio/speech"
+    url = "http://127.0.0.1:6006/audio/speech"
 
     text = "你好，这是一个 Index TTS 测试语音。"
 
