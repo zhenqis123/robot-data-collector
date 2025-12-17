@@ -86,6 +86,7 @@ public:
     bool updateCameraConfig(int id, const CameraConfig &config);
     const std::vector<ArucoTarget> &getArucoTargets() const { return _arucoTargets; }
     const std::string &getTasksRootPath() const { return _tasksRoot; }
+    const std::string &getCapturesRootPath() const { return _capturesRoot; }
     const VlmConfig &getVlmConfig() const { return _vlmConfig; }
     const AudioPromptsConfig &getAudioPromptsConfig() const { return _audioConfig; }
 
@@ -94,6 +95,7 @@ private:
     std::vector<ArucoTarget> _arucoTargets;
     std::string _path;
     std::string _tasksRoot;
+    std::string _capturesRoot;
     VlmConfig _vlmConfig;
     AudioPromptsConfig _audioConfig;
     Logger &_logger;

@@ -1,5 +1,6 @@
 {
   "tasks_path": "tasks",
+  "captures_path": "logs/captures",
   "vlm": {
     "model": "qwen3-vl-plus",
     "endpoint": "https://api.probex.top/v1/chat/completions",
@@ -12,7 +13,7 @@
     "language": "chinese",
     "volume": 100,
     "index_tts": {
-      "endpoint": "http://127.0.0.1:6006/tts_url",
+      "endpoint": "http://192.168.20.173:6006/tts_url",
       "audio_paths": ["/home/xiziheng/develop/data_collector/index-tts-vllm/assets/jay_promptvn.wav"]
     },
     "texts": {

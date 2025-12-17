@@ -35,6 +35,7 @@ bool ConfigManager::load(const std::string &path)
     _arucoTargets.clear();
     _vlmConfig = {};
     _audioConfig = {};
+    _capturesRoot.clear();
 
     const auto cameras = doc.object().value("cameras").toArray();
     for (const auto &entry : cameras)
@@ -117,6 +118,20 @@ bool ConfigManager::load(const std::string &path)
             candidate = configDir / candidate;
         _tasksRoot = candidate.lexically_normal().string();
         _logger.info("Tasks root set to: %s", _tasksRoot.c_str());
+    }
+
+    // captures_path
+    {
+        std::filesystem::path configPath(_path);
+        auto configDir = configPath.parent_path();
+        auto capturesPath = doc.object().value("captures_path").toString().toStdString();
+        if (capturesPath.empty())
+            capturesPath = "logs/captures";
+        std::filesystem::path candidate(capturesPath);
+        if (candidate.is_relative())
+            candidate = configDir / candidate;
+        _capturesRoot = candidate.lexically_normal().string();
+        _logger.info("Captures root set to: %s", _capturesRoot.c_str());
     }
 
     // vlm config
