@@ -41,6 +41,19 @@ def find_meta_files(root: Path, max_depth: int) -> List[Path]:
     return result
 
 
+def list_meta_files(root: Path, find_meta: bool, max_depth: int) -> List[Path]:
+    if find_meta:
+        return find_meta_files(root, max_depth)
+    result: List[Path] = []
+    for child in sorted(root.iterdir()):
+        if not child.is_dir():
+            continue
+        meta = child / "meta.json"
+        if meta.exists():
+            result.append(meta)
+    return result
+
+
 def load_meta(meta_path: Path) -> Dict:
     with meta_path.open("r") as f:
         return json.load(f)
@@ -189,9 +202,13 @@ def main():
     parser = argparse.ArgumentParser(description="Offline depth-to-color alignment from PNGs and meta.json")
     parser.add_argument("root", help="Root directory containing captures/meta.json")
     parser.add_argument("--workers", type=int, default=4, help="Worker threads for alignment")
+    parser.add_argument("--find-meta", type=str, default="true",
+                        choices=["true", "false"],
+                        help="Search meta.json recursively (true) or only root/*/meta.json (false)")
     args = parser.parse_args()
     root = Path(args.root).expanduser().resolve()
-    metas = find_meta_files(root, 2)
+    find_meta = args.find_meta.lower() == "true"
+    metas = list_meta_files(root, find_meta, 2)
     if not metas:
         print("No meta.json found")
         return
