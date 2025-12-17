@@ -17,7 +17,7 @@ cmake --build build
 ## 运行程序
 1. 根据实际硬件编辑 `resources/config.json`（将摄像头 `type` 设为 `RealSense` 可启用真实设备）。
 2. 确认 `resources/logs` 可写。
-3. 运行 `./build/DataCollectorApp`（Windows 执行 `.exe`），先填写“采集名称/被试信息/保存路径”，点击“打开摄像头”建立预览，再用“开始/停止/暂停/继续采集”控制录制；界面会为每台相机生成独立预览（RealSense 同时显示 RGB 与深度）。左侧的“相机设置”区域可以实时调整每台设备的彩色/深度分辨率与帧率。
+3. 运行 `./build/DataCollectorApp`（Windows 执行 `.exe`），先填写“采集名称/被试信息”，点击“打开摄像头”建立预览，再用“开始/停止/暂停/继续采集”控制录制；界面会为每台相机生成独立预览（RealSense 同时显示 RGB 与深度）。左侧的“相机设置”区域可以实时调整每台设备的彩色/深度分辨率与帧率。保存根目录由 `resources/config.json` 中的 `captures_path` 指定。
 
 ## 配置说明
 `resources/config.json` 中的 RealSense 相机条目示例：

@@ -18,7 +18,7 @@ cmake --build build
 ## Running
 1. Ensure `resources/config.json` describes your cameras (set `"type": "RealSense"` to use actual hardware).
 2. Create `resources/logs` (already tracked) and ensure the process can write to it.
-3. Execute `./build/DataCollectorApp`. Click **Open Cameras** to initialize streams, fill in **Capture Name / Subject Info / Save Path**, then use **Start/Stop/Pause/Resume Capture** to control recording while previews stay live (each RealSense view shows RGB + depth). Use the **Camera Settings** section to adjust color/depth resolution and FPS per device as needed.
+3. Execute `./build/DataCollectorApp`. Click **Open Cameras** to initialize streams, fill in **Capture Name / Subject Info**, then use **Start/Stop/Pause/Resume Capture** to control recording while previews stay live (each RealSense view shows RGB + depth). Use the **Camera Settings** section to adjust color/depth resolution and FPS per device as needed. Capture output root is defined by `captures_path` in `resources/config.json`.
 
 ## Configuration
 Override runtime parameters by editing `resources/config.json`. RealSense entries can define separate color/depth stream settings:

@@ -1,7 +1,6 @@
 #include "MainWindow.h"
 
 #include <QComboBox>
-#include <QFileDialog>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -83,7 +82,6 @@ MainWindow::MainWindow()
     setupUi();
     _captureNameEdit->setPlaceholderText("例如: Session01 / e.g. Session01");
     _subjectEdit->setPlaceholderText("受试者信息 / Subject info");
-    _savePathEdit->setText(QString::fromStdString(_defaultCaptureRoot));
     _preview.setStatusLabel(_statusLabel);
     _preview.setDevicesLayout(_devicesLayout);
     _preview.setArucoTracker(_arucoTracker.get());
@@ -209,12 +207,10 @@ MainWindow::CaptureInfo MainWindow::gatherCaptureInfo() const
     std::strftime(timeBuf, sizeof(timeBuf), "%Y%m%d_%H%M%S", &tm);
     const std::string sessionId = std::string("sess_") + timeBuf;
 
-    std::string baseRoot = _savePathEdit ? _savePathEdit->text().trimmed().toStdString() : "";
+    std::string baseRoot = _configManager.getCapturesRootPath();
     if (baseRoot.empty())
         baseRoot = _defaultCaptureRoot;
     std::filesystem::path base(baseRoot);
-    if (base.is_relative())
-        base = std::filesystem::path(_defaultCaptureRoot) / base;
     base /= dateBuf;
     base /= sessionId;
     info.path = base.string();
@@ -341,15 +337,8 @@ QGroupBox *MainWindow::createMetadataGroup()
     auto *formLayout = new QFormLayout(box);
     _captureNameEdit = new QLineEdit();
     _subjectEdit = new QLineEdit();
-    _savePathEdit = new QLineEdit();
-    auto *browseButton = new QPushButton(tr("浏览 / Browse"));
-    auto *pathLayout = new QHBoxLayout();
-    pathLayout->addWidget(_savePathEdit, 1);
-    pathLayout->addWidget(browseButton);
     formLayout->addRow(tr("采集名称 / Capture Name"), _captureNameEdit);
     formLayout->addRow(tr("受试者 / Subject"), _subjectEdit);
-    formLayout->addRow(tr("保存路径 / Save Path"), pathLayout);
-    connect(browseButton, &QPushButton::clicked, this, &MainWindow::onBrowseSavePath);
     return box;
 }
 
@@ -1913,14 +1902,6 @@ void MainWindow::updateTaskStatusUi()
     }
     _taskStepLabel->setText(stepText);
     updateRecordingBanner();
-}
-
-void MainWindow::onBrowseSavePath()
-{
-    const auto dir = QFileDialog::getExistingDirectory(this, tr("选择保存目录 / Choose save directory"),
-                                                       _savePathEdit->text());
-    if (!dir.isEmpty())
-        _savePathEdit->setText(dir);
 }
 
 void MainWindow::onCameraSelectionChanged(int index)

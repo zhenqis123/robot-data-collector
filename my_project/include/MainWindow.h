@@ -63,7 +63,6 @@ private slots:
     void onSkipStep();
     void onRetryStep();
     void onMarkKeyframe();
-    void onBrowseSavePath();
     void onCameraSelectionChanged(int index);
     void onApplyCameraSettings();
     void onShowParticipantPrompt();
@@ -99,7 +98,6 @@ private:
     QPushButton *_applySettingsButton{nullptr};
     QLineEdit *_captureNameEdit{nullptr};
     QLineEdit *_subjectEdit{nullptr};
-    QLineEdit *_savePathEdit{nullptr};
     QComboBox *_cameraSelect{nullptr};
     QComboBox *_colorResCombo{nullptr};
     QComboBox *_colorFpsCombo{nullptr};
