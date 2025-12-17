@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import csv
 from dataclasses import dataclass
+import os
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import numpy as np
@@ -57,6 +58,31 @@ def closest_frame(target_ts: int, frames: List[FrameRow]) -> Tuple[Optional[Fram
         return None, None
     best = min(frames, key=lambda fr: abs(fr.timestamp_ms - target_ts))
     return best, abs(best.timestamp_ms - target_ts)
+
+
+def find_meta_files(root: Path, max_depth: int) -> List[Path]:
+    result: List[Path] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        depth = len(Path(dirpath).relative_to(root).parts)
+        if depth > max_depth:
+            dirnames[:] = []
+            continue
+        if "meta.json" in filenames:
+            result.append(Path(dirpath) / "meta.json")
+    return sorted(result)
+
+
+def list_meta_files(root: Path, find_meta: bool, max_depth: int) -> List[Path]:
+    if find_meta:
+        return find_meta_files(root, max_depth)
+    result: List[Path] = []
+    for child in sorted(root.iterdir()):
+        if not child.is_dir():
+            continue
+        meta = child / "meta.json"
+        if meta.exists():
+            result.append(meta)
+    return result
 
 
 def align_capture(capture_root: Path, reference: Optional[str]) -> None:
@@ -136,10 +162,20 @@ def align_capture(capture_root: Path, reference: Optional[str]) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Align frames across cameras by timestamp (nearest to reference).")
-    parser.add_argument("capture", help="Capture root containing meta.json")
+    parser.add_argument("root", help="Root directory containing capture folders or meta.json")
     parser.add_argument("--reference", help="Reference camera id (defaults to first in meta.json)", default=None)
+    parser.add_argument("--find-meta", type=str, default="true",
+                        choices=["true", "false"],
+                        help="Search meta.json recursively (true) or only root/*/meta.json (false)")
     args = parser.parse_args()
-    align_capture(Path(args.capture).expanduser().resolve(), args.reference)
+    root = Path(args.root).expanduser().resolve()
+    find_meta = args.find_meta.lower() == "true"
+    metas = list_meta_files(root, find_meta, 2)
+    if not metas:
+        print("No meta.json found")
+        return
+    for meta in metas:
+        align_capture(meta.parent, args.reference)
 
 
 if __name__ == "__main__":

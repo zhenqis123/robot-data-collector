@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 from pathlib import Path
 from typing import List, Dict, Tuple
 
@@ -135,13 +136,48 @@ def auto_process(root: Path, fps: float, output_name: str) -> None:
             print(f"[videos] skip {cid}: {exc}")
 
 
+def find_meta_files(root: Path, max_depth: int) -> List[Path]:
+    result: List[Path] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        depth = len(Path(dirpath).relative_to(root).parts)
+        if depth > max_depth:
+            dirnames[:] = []
+            continue
+        if "meta.json" in filenames:
+            result.append(Path(dirpath) / "meta.json")
+    return sorted(result)
+
+
+def list_meta_files(root: Path, find_meta: bool, max_depth: int) -> List[Path]:
+    if find_meta:
+        return find_meta_files(root, max_depth)
+    result: List[Path] = []
+    for child in sorted(root.iterdir()):
+        if not child.is_dir():
+            continue
+        meta = child / "meta.json"
+        if meta.exists():
+            result.append(meta)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description="Encode color frames to MP4 for all cameras in a capture")
-    parser.add_argument("root", help="Capture root containing meta.json (and optionally frames_aligned.csv)")
+    parser.add_argument("root", help="Root directory containing capture folders or meta.json")
     parser.add_argument("--fps", type=float, default=30.0, help="Frames per second")
     parser.add_argument("--output-name", default="color.mp4", help="Output video filename per camera")
+    parser.add_argument("--find-meta", type=str, default="true",
+                        choices=["true", "false"],
+                        help="Search meta.json recursively (true) or only root/*/meta.json (false)")
     args = parser.parse_args()
-    auto_process(Path(args.root), args.fps, args.output_name)
+    root = Path(args.root).expanduser().resolve()
+    find_meta = args.find_meta.lower() == "true"
+    metas = list_meta_files(root, find_meta, 2)
+    if not metas:
+        print("No meta.json found")
+        return
+    for meta in metas:
+        auto_process(meta.parent, args.fps, args.output_name)
 
 
 if __name__ == "__main__":
