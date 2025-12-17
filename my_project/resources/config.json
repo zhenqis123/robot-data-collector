@@ -1,6 +1,6 @@
 {
   "tasks_path": "tasks",
-  "captures_path": "logs/captures",
+  "captures_path": "/media/zwp/zsp-green/data_xizh/logs/captures",
   "vlm": {
     "model": "qwen3-vl-plus",
     "endpoint": "https://api.probex.top/v1/chat/completions",
