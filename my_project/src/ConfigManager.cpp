@@ -36,6 +36,7 @@ bool ConfigManager::load(const std::string &path)
     _vlmConfig = {};
     _audioConfig = {};
     _capturesRoot.clear();
+    _displayFpsLimit = 0.0;
 
     const auto cameras = doc.object().value("cameras").toArray();
     for (const auto &entry : cameras)
@@ -106,6 +107,8 @@ bool ConfigManager::load(const std::string &path)
             _arucoTargets.push_back(std::move(target));
     }
 
+    _displayFpsLimit = doc.object().value("display_fps_limit").toDouble(0.0);
+
     // tasks_path
     {
         std::filesystem::path configPath(_path);
@@ -157,6 +160,7 @@ bool ConfigManager::load(const std::string &path)
         _audioConfig.volume = static_cast<float>(audioObj.value("volume").toDouble(1.0));
         _audioConfig.mode = audioObj.value("mode").toString("index_tts").toLower().toStdString();
         _audioConfig.language = audioObj.value("language").toString("chinese").toLower().toStdString();
+        _audioConfig.keyframeOnly = audioObj.value("keyframe_only").toBool(false);
         _audioConfig.indexTts.audioPaths.clear();
         _audioConfig.texts.clear();
         _audioConfig.keybindings.clear();
