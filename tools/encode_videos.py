@@ -9,11 +9,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import bisect
 import csv
 import json
 import os
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -134,6 +135,146 @@ def auto_process(root: Path, fps: float, output_name: str) -> None:
             encode_color_frames_from_list(frames, out, fps)
         except Exception as exc:
             print(f"[videos] skip {cid}: {exc}")
+    annotate_video_positions(root, fps)
+
+
+def load_ref_timestamps(root: Path) -> Tuple[List[float], str]:
+    aligned_path = root / "frames_aligned.csv"
+    if aligned_path.exists():
+        with aligned_path.open("r", newline="") as f:
+            reader = csv.DictReader(f)
+            ts_list: List[float] = []
+            ref_cam = ""
+            for i, row in enumerate(reader):
+                if i == 0:
+                    ref_cam = row.get("ref_camera", "") or ""
+                value = row.get("ref_timestamp_ms", "")
+                if value == "":
+                    continue
+                try:
+                    ts_list.append(float(value))
+                except ValueError:
+                    continue
+            return ts_list, ref_cam
+
+    meta_path = root / "meta.json"
+    if meta_path.exists():
+        meta = json.loads(meta_path.read_text())
+        cams = [str(c["id"]) for c in meta.get("cameras", []) if "id" in c]
+        if cams:
+            cam_id = cams[0]
+            cam_dir = root / sanitize_camera_id(cam_id)
+            ts_path = cam_dir / "timestamps.csv"
+            if ts_path.exists():
+                with ts_path.open("r", newline="") as f:
+                    reader = csv.DictReader(f)
+                    ts_list = []
+                    for row in reader:
+                        value = row.get("timestamp_ms", "")
+                        if value == "":
+                            continue
+                        try:
+                            ts_list.append(float(value))
+                        except ValueError:
+                            continue
+                    return ts_list, cam_id
+    return [], ""
+
+
+def nearest_frame_index(timestamps: List[float], ts_ms: float) -> Optional[int]:
+    if not timestamps:
+        return None
+    idx = bisect.bisect_left(timestamps, ts_ms)
+    if idx <= 0:
+        return 0
+    if idx >= len(timestamps):
+        return len(timestamps) - 1
+    before = timestamps[idx - 1]
+    after = timestamps[idx]
+    return idx - 1 if (ts_ms - before) <= (after - ts_ms) else idx
+
+
+def update_jsonl_with_video_position(
+    path: Path,
+    timestamps: List[float],
+    fps: float,
+    ts_getter: Callable[[Dict], Optional[float]],
+) -> None:
+    if not path.exists():
+        return
+    updated = 0
+    rows: List[Dict] = []
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                rows.append({"_raw": line})
+                continue
+            ts = ts_getter(obj)
+            if ts is not None:
+                idx = nearest_frame_index(timestamps, ts)
+                if idx is not None:
+                    obj["video_frame_index"] = idx
+                    obj["video_time_s"] = idx / fps
+                    updated += 1
+            rows.append(obj)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as f:
+        for obj in rows:
+            if "_raw" in obj:
+                f.write(obj["_raw"] + "\n")
+            else:
+                f.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    tmp.replace(path)
+    print(f"[videos] updated {updated} entries with video positions in {path.name}")
+
+
+def update_camera_poses_with_video_position(path: Path, fps: float) -> None:
+    if not path.exists():
+        return
+    data = json.loads(path.read_text())
+    poses = data.get("poses", [])
+    updated = 0
+    for pose in poses:
+        frame_index = pose.get("frame_index")
+        if isinstance(frame_index, (int, float)):
+            frame_idx = int(frame_index)
+            pose["video_frame_index"] = frame_idx
+            pose["video_time_s"] = frame_idx / fps
+            updated += 1
+    data["poses"] = poses
+    path.write_text(json.dumps(data, indent=2))
+    print(f"[videos] updated {updated} pose entries with video_time_s in {path.name}")
+
+
+def annotate_video_positions(root: Path, fps: float) -> None:
+    timestamps, ref_cam = load_ref_timestamps(root)
+    if not timestamps:
+        print(f"[videos] skip video position update, no timestamps for {root}")
+        return
+    events_path = root / "events.jsonl"
+    annotations_path = root / "annotations.jsonl"
+    poses_path = root / "camera_poses_apriltag.json"
+
+    update_jsonl_with_video_position(
+        events_path,
+        timestamps,
+        fps,
+        lambda obj: obj.get("ts_ms") if isinstance(obj.get("ts_ms"), (int, float)) else None,
+    )
+    update_jsonl_with_video_position(
+        annotations_path,
+        timestamps,
+        fps,
+        lambda obj: obj.get("timestamp_ms")
+        if isinstance(obj.get("timestamp_ms"), (int, float))
+        else None,
+    )
+    update_camera_poses_with_video_position(poses_path, fps)
 
 
 def find_meta_files(root: Path, max_depth: int) -> List[Path]:
