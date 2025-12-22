@@ -11,12 +11,19 @@ DataCapture::DataCapture(std::vector<DeviceSpec> devices,
                          DataStorage &storage,
                          Preview &preview,
                          Logger &logger,
-                         ArucoTracker *arucoTracker)
+                         ArucoTracker *arucoTracker,
+                         double displayFpsLimit)
     : _storage(storage),
       _preview(preview),
       _logger(logger),
-      _arucoTracker(arucoTracker)
+      _arucoTracker(arucoTracker),
+      _displayFpsLimit(displayFpsLimit)
 {
+    if (_displayFpsLimit > 0.0)
+    {
+        _displayInterval = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+            std::chrono::duration<double>(1.0 / _displayFpsLimit));
+    }
     for (auto &spec : devices)
     {
         auto ctx = std::make_unique<DeviceContext>();
@@ -232,6 +239,16 @@ void DataCapture::displayLoop(DeviceContext *ctx)
                 break;
             item = std::move(ctx->displayQueue.front());
             ctx->displayQueue.pop();
+        }
+        if (_displayFpsLimit > 0.0)
+        {
+            const auto now = std::chrono::steady_clock::now();
+            if (ctx->lastDisplay.time_since_epoch().count() != 0 &&
+                now - ctx->lastDisplay < _displayInterval)
+            {
+                continue;
+            }
+            ctx->lastDisplay = now;
         }
         _preview.showFrame(item.frame);
         if (item.stats)

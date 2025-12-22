@@ -1353,7 +1353,8 @@ void MainWindow::updateKeyBindings()
 
 void MainWindow::keyPressEvent(QKeyEvent *event)
 {
-    const auto &keys = _configManager.getAudioPromptsConfig().keybindings;
+    const auto &audioConfig = _configManager.getAudioPromptsConfig();
+    const auto &keys = audioConfig.keybindings;
     auto matchKey = [&](const std::string &action) -> bool {
         auto it = keys.find(action);
         if (it == keys.end())
@@ -1361,6 +1362,18 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
         int k = keyFromString(it->second);
         return k != 0 && event->key() == k;
     };
+
+    if (audioConfig.keyframeOnly)
+    {
+        if (matchKey("keyframe"))
+        {
+            if (!throttleTrigger("keyframe", 200))
+                onMarkKeyframe();
+            return;
+        }
+        QMainWindow::keyPressEvent(event);
+        return;
+    }
 
     if (matchKey("step_start"))
     {
@@ -1455,7 +1468,8 @@ void MainWindow::onOpenCameras()
 
     _capture = std::make_unique<DataCapture>(std::move(devices),
                                              _storage, _preview, _logger,
-                                             _arucoTracker.get());
+                                             _arucoTracker.get(),
+                                             _configManager.getDisplayFpsLimit());
     if (_capture->start())
     {
         _statusLabel->setText(tr("相机已打开 / Cameras opened"));
@@ -1733,6 +1747,8 @@ void MainWindow::onMarkKeyframe()
     _storage.logEvent("keyframe");
     logAnnotation("keyframe");
     _logger.info("Keyframe marked");
+    const std::string taskId = _currentTask ? _currentTask->task.id : "";
+    _audioPlayer.play("keyframe", taskId);
 }
 
 void MainWindow::onSkipStep()

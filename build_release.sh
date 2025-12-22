@@ -13,7 +13,7 @@ echo "Configuring CMake (Release)..."
 cmake -S "$PROJECT_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
 
 echo "Building (Release)..."
-cmake --build "$BUILD_DIR" -j
+cmake --build "$BUILD_DIR" -j --target DataCollectorApp
 
 echo
 echo "Release build completed."

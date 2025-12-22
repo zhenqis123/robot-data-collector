@@ -1,6 +1,7 @@
 {
   "tasks_path": "tasks",
-  "captures_path": "/media/zwp/zsp-green/data_xizh/logs/captures",
+  "captures_path": "my_project/resources/logs/captures",
+  "display_fps_limit": 15,
   "vlm": {
     "model": "qwen3-vl-plus",
     "endpoint": "https://api.probex.top/v1/chat/completions",
@@ -11,6 +12,7 @@
     "enabled": true,
     "mode": "index_tts",
     "language": "chinese",
+    "keyframe_only": true,
     "volume": 100,
     "index_tts": {
       "endpoint": "http://192.168.20.173:6006/tts_url",
@@ -26,6 +28,7 @@
       "resume": "录制已继续。",
       "skip": "已跳过当前步骤。",
       "retry": "正在重试当前步骤。",
+      "keyframe": "标记",
       "stop_running": "录制已停止，任务中断。",
       "stop_completed": "录制已停止，任务完成。",
       "vlm_success": "任务生成成功。",
