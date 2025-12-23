@@ -13,6 +13,7 @@ import bisect
 import csv
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -21,7 +22,7 @@ import numpy as np
 from tqdm import tqdm
 
 
-def encode_color_frames_from_list(frames: List[Path], output: Path, fps: float = 30.0) -> None:
+def encode_color_frames_from_list(frames: List[Path], output: Path, fps: float = 30.0) -> int:
     if not frames:
         raise RuntimeError("No frames provided")
     sample = None
@@ -45,6 +46,7 @@ def encode_color_frames_from_list(frames: List[Path], output: Path, fps: float =
         count += 1
     writer.release()
     print(f"[videos] wrote {output} from {count} frames")
+    return count
 
 
 def derive_cameras(root: Path) -> List[str]:
@@ -127,15 +129,28 @@ def auto_process(root: Path, fps: float, output_name: str) -> None:
     if not frame_lists:
         print(f"[videos] skip {root}, no frames_aligned.csv or frames found")
         return
+    encoded: Dict[str, int] = {}
     for cid, frames in frame_lists.items():
         if not frames:
             continue
         out = root / sanitize_camera_id(str(cid)) / output_name
         try:
-            encode_color_frames_from_list(frames, out, fps)
+            count = encode_color_frames_from_list(frames, out, fps)
+            encoded[str(cid)] = count
         except Exception as exc:
             print(f"[videos] skip {cid}: {exc}")
-    annotate_video_positions(root, fps)
+    if encoded:
+        annotate_video_positions(root, fps)
+        update_marker(
+            root,
+            "encode_videos",
+            {
+                "fps": fps,
+                "output_name": output_name,
+                "cameras": list(encoded.keys()),
+                "frame_counts": encoded,
+            },
+        )
 
 
 def load_ref_timestamps(root: Path) -> Tuple[List[float], str]:
@@ -275,6 +290,27 @@ def annotate_video_positions(root: Path, fps: float) -> None:
         else None,
     )
     update_camera_poses_with_video_position(poses_path, fps)
+
+
+def update_marker(capture_root: Path, step: str, info: Dict) -> None:
+    marker_path = capture_root / "postprocess_markers.json"
+    payload = {}
+    if marker_path.exists():
+        try:
+            payload = json.loads(marker_path.read_text())
+        except json.JSONDecodeError:
+            payload = {}
+    steps = payload.get("steps")
+    if not isinstance(steps, dict):
+        steps = {}
+    done_at = datetime.now(timezone.utc).isoformat()
+    entry = dict(info)
+    entry["done_at"] = done_at
+    steps[step] = entry
+    payload["steps"] = steps
+    payload["updated_at"] = done_at
+    marker_path.write_text(json.dumps(payload, indent=2))
+    print(f"[videos] updated marker {marker_path}")
 
 
 def find_meta_files(root: Path, max_depth: int) -> List[Path]:

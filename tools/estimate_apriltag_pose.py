@@ -24,6 +24,7 @@ import json
 import math
 from pathlib import Path
 from typing import Dict, List, Tuple
+from datetime import datetime, timezone
 
 import cv2
 import numpy as np
@@ -373,8 +374,40 @@ def main():
     with args.output.open("w") as f:
         json.dump(out, f, indent=2)
     print(f"Saved poses for {len(markers_out)} tags to {args.output}")
+    update_marker(
+        args.meta.parent,
+        "apriltag_map",
+        {
+            "tag_map": str(args.output),
+            "figure": str(args.figure),
+            "images": str(args.images),
+            "family": args.family,
+            "tag_length_m": args.tag_length,
+        },
+    )
 
     plot_map(poses, args.tag_length, args.figure)
+
+
+def update_marker(capture_root: Path, step: str, info: Dict) -> None:
+    marker_path = capture_root / "postprocess_markers.json"
+    payload = {}
+    if marker_path.exists():
+        try:
+            payload = json.loads(marker_path.read_text())
+        except json.JSONDecodeError:
+            payload = {}
+    steps = payload.get("steps")
+    if not isinstance(steps, dict):
+        steps = {}
+    done_at = datetime.now(timezone.utc).isoformat()
+    entry = dict(info)
+    entry["done_at"] = done_at
+    steps[step] = entry
+    payload["steps"] = steps
+    payload["updated_at"] = done_at
+    marker_path.write_text(json.dumps(payload, indent=2))
+    print(f"[apriltag] updated marker {marker_path}")
 
 
 if __name__ == "__main__":

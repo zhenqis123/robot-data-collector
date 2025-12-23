@@ -17,6 +17,7 @@ import csv
 import json
 import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -457,6 +458,17 @@ def process_capture(
     console.print(
         f"[pose] wrote {out_path} (ok={ok_count}, error={err_count}, frames={row_count})"
     )
+    update_marker(
+        capture_root,
+        "camera_poses_apriltag",
+        {
+            "output": out_path.name,
+            "ok_frames": ok_count,
+            "error_frames": err_count,
+            "frames": row_count,
+            "tag_map": str(tag_map_path),
+        },
+    )
     return True
 
 
@@ -539,6 +551,27 @@ def main() -> int:
     if not any_written:
         return 1
     return 0
+
+
+def update_marker(capture_root: Path, step: str, info: Dict) -> None:
+    marker_path = capture_root / "postprocess_markers.json"
+    payload = {}
+    if marker_path.exists():
+        try:
+            payload = json.loads(marker_path.read_text())
+        except json.JSONDecodeError:
+            payload = {}
+    steps = payload.get("steps")
+    if not isinstance(steps, dict):
+        steps = {}
+    done_at = datetime.now(timezone.utc).isoformat()
+    entry = dict(info)
+    entry["done_at"] = done_at
+    steps[step] = entry
+    payload["steps"] = steps
+    payload["updated_at"] = done_at
+    marker_path.write_text(json.dumps(payload, indent=2))
+    print(f"[pose] updated marker {marker_path}")
 
 
 if __name__ == "__main__":
