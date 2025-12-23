@@ -23,6 +23,8 @@ from tqdm import tqdm
 import concurrent.futures
 from functools import lru_cache
 import os
+import json
+from datetime import datetime, timezone
 
 
 def find_meta_files(root: Path, max_depth: int) -> List[Path]:
@@ -168,6 +170,7 @@ def process_capture(meta_path: Path, workers: int) -> None:
     meta = load_meta(meta_path)
     cam_entries = {c["id"]: c for c in meta.get("cameras", [])}
     base = meta_path.parent
+    processed_cams = []
     for cam_id, cam in cam_entries.items():
         cam_dir = base / sanitize_camera_id(str(cam_id))
         depth_dir = cam_dir / "depth"
@@ -196,6 +199,17 @@ def process_capture(meta_path: Path, workers: int) -> None:
             ):
                 pass
         print(f"[align] processed camera {cam_id} in {base}")
+        processed_cams.append(str(cam_id))
+    if processed_cams:
+        update_marker(
+            base,
+            "align_depth",
+            {
+                "cameras": processed_cams,
+                "workers": workers,
+                "output_dir": "depth_aligned",
+            },
+        )
 
 
 def main():
@@ -214,6 +228,27 @@ def main():
         return
     for m in metas:
         process_capture(m, max(1, args.workers))
+
+
+def update_marker(capture_root: Path, step: str, info: Dict) -> None:
+    marker_path = capture_root / "postprocess_markers.json"
+    payload = {}
+    if marker_path.exists():
+        try:
+            payload = json.loads(marker_path.read_text())
+        except json.JSONDecodeError:
+            payload = {}
+    steps = payload.get("steps")
+    if not isinstance(steps, dict):
+        steps = {}
+    done_at = datetime.now(timezone.utc).isoformat()
+    entry = dict(info)
+    entry["done_at"] = done_at
+    steps[step] = entry
+    payload["steps"] = steps
+    payload["updated_at"] = done_at
+    marker_path.write_text(json.dumps(payload, indent=2))
+    print(f"[align] updated marker {marker_path}")
 
 
 if __name__ == "__main__":

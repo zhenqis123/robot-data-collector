@@ -14,9 +14,11 @@ from __future__ import annotations
 import argparse
 import csv
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from datetime import datetime, timezone
 import numpy as np
 
 TS_FIELDS = ["timestamp_iso", "timestamp_ms", "device_timestamp_ms", "color_path", "depth_path"]
@@ -158,6 +160,15 @@ def align_capture(capture_root: Path, reference: Optional[str]) -> None:
         else:
             lines.append(f"  {cid}: no matches")
     print("\n".join(lines))
+    update_marker(
+        capture_root,
+        "align_timestamps",
+        {
+            "reference_camera": ref_id,
+            "output": out_path.name,
+            "rows": len(ref_frames),
+        },
+    )
 
 
 def main():
@@ -176,6 +187,27 @@ def main():
         return
     for meta in metas:
         align_capture(meta.parent, args.reference)
+
+
+def update_marker(capture_root: Path, step: str, info: Dict) -> None:
+    marker_path = capture_root / "postprocess_markers.json"
+    payload = {}
+    if marker_path.exists():
+        try:
+            payload = json.loads(marker_path.read_text())
+        except json.JSONDecodeError:
+            payload = {}
+    steps = payload.get("steps")
+    if not isinstance(steps, dict):
+        steps = {}
+    done_at = datetime.now(timezone.utc).isoformat()
+    entry = dict(info)
+    entry["done_at"] = done_at
+    steps[step] = entry
+    payload["steps"] = steps
+    payload["updated_at"] = done_at
+    marker_path.write_text(json.dumps(payload, indent=2))
+    print(f"[timestamps] updated marker {marker_path}")
 
 
 if __name__ == "__main__":
