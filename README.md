@@ -53,6 +53,24 @@ sudo apt install librealsense2-utils librealsense2-dev librealsense2-dbg
 
 # HDF5(保存depth数据)
 sudo apt install -y libhdf5-dev hdf5-tools
+
+sudo apt install \
+    libgstreamer1.0-dev \
+    libgstreamer-plugins-base1.0-dev \
+    libgstreamer-plugins-bad1.0-dev \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-ugly \
+    gstreamer1.0-libav \
+    gstreamer1.0-tools \
+    gstreamer1.0-x \
+    gstreamer1.0-alsa \
+    gstreamer1.0-gl \
+    gstreamer1.0-gtk3 \
+    gstreamer1.0-qt5 \
+    gstreamer1.0-pulseaudio
+
 ```
 
 建议使用较新的 Ubuntu LTS（例如 20.04/22.04），并确保 CMake ≥ 3.16、GCC ≥ 9。
