@@ -50,6 +50,9 @@ sudo apt install libcurl4-openssl-dev nlohmann-json3-dev
 
 # RealSense SDK（如需）
 sudo apt install librealsense2-utils librealsense2-dev librealsense2-dbg
+
+# HDF5(保存depth数据)
+sudo apt install -y libhdf5-dev hdf5-tools
 ```
 
 建议使用较新的 Ubuntu LTS（例如 20.04/22.04），并确保 CMake ≥ 3.16、GCC ≥ 9。

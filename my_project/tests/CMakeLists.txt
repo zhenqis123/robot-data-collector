@@ -21,6 +21,7 @@ target_include_directories(unit_tests PRIVATE
     ${OpenCV_INCLUDE_DIRS}
     ${REALSENSE2_INCLUDE_DIR}
     ${APRILTAG_SOURCE_DIR}
+    ${GST_INCLUDE_DIRS}
 )
 
 target_link_libraries(unit_tests
@@ -30,10 +31,13 @@ target_link_libraries(unit_tests
         ${QT_LIBS}
         ${OpenCV_LIBS}
         ${REALSENSE2_LIBRARY}
+        ${GST_LIBRARIES}
+        HDF5::HDF5
         apriltag
         Threads::Threads
         CURL::libcurl
 )
+target_compile_options(unit_tests PRIVATE ${GST_CFLAGS_OTHER})
 target_compile_definitions(unit_tests
     PRIVATE APP_CONFIG_PATH="${PROJECT_SOURCE_DIR}/resources/config.json"
             APP_LOG_DIR="${PROJECT_SOURCE_DIR}/resources/logs"

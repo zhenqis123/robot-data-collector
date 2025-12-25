@@ -8,6 +8,17 @@
 #include "Logger.h"
 #include <filesystem>
 
+namespace
+{
+int highestPowerOfTwo(int value)
+{
+    int result = 1;
+    while (result <= value / 2)
+        result *= 2;
+    return result;
+}
+} // namespace
+
 ConfigManager::ConfigManager(Logger &logger)
     : _logger(logger)
 {
@@ -71,12 +82,16 @@ bool ConfigManager::load(const std::string &path)
                 }
                 if (streamObj.contains("frame_rate"))
                     stream.frameRate = streamObj.value("frame_rate").toInt(stream.frameRate);
+                if (streamObj.contains("chunk_size"))
+                    stream.chunkSize = streamObj.value("chunk_size").toInt(0);
             }
             return stream;
         };
 
         config.color = streamFromObject(obj.value("color").toObject(), {width, height}, fps);
         config.depth = streamFromObject(obj.value("depth").toObject(), {width, height}, fps);
+        if (config.depth.chunkSize <= 0)
+            config.depth.chunkSize = defaultDepthChunkSize(config.depth.width, config.depth.height);
         config.width = config.color.width > 0 ? config.color.width : width;
         config.height = config.color.height > 0 ? config.color.height : height;
         config.frameRate = config.color.frameRate > 0 ? config.color.frameRate : fps;
@@ -198,6 +213,25 @@ std::pair<int, int> ConfigManager::parseResolution(const std::string &value)
     const auto width = std::stoi(value.substr(0, pos));
     const auto height = std::stoi(value.substr(pos + 1));
     return {width, height};
+}
+
+int ConfigManager::defaultDepthChunkSize(int width, int height)
+{
+    if (width <= 0 || height <= 0)
+        return 0;
+    constexpr int64_t targetBytes = 32LL * 1024 * 1024;
+    const int64_t frameBytes = static_cast<int64_t>(width) * static_cast<int64_t>(height) * 2;
+    if (frameBytes <= 0)
+        return 0;
+    int chunk = static_cast<int>(targetBytes / frameBytes);
+    if (chunk < 1)
+        chunk = 1;
+    chunk = highestPowerOfTwo(chunk);
+    if (chunk < 4)
+        chunk = 4;
+    if (chunk > 128)
+        chunk = 128;
+    return chunk;
 }
 
 bool ConfigManager::updateCameraConfig(int id, const CameraConfig &config)

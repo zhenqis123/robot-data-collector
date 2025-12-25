@@ -54,6 +54,7 @@ struct CameraConfig
         int width = 0;
         int height = 0;
         int frameRate = 0;
+        int chunkSize = 0;
         StreamType streamType = StreamType::Color;
     };
     StreamConfig color;
@@ -104,4 +105,5 @@ private:
     Logger &_logger;
 
     static std::pair<int, int> parseResolution(const std::string &value);
+    static int defaultDepthChunkSize(int width, int height);
 };
