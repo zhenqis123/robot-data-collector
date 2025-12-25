@@ -5,6 +5,7 @@ Estimate per-frame camera poses in the AprilTag world frame using aligned frames
 Requirements:
   - frames_aligned.csv is already generated under each capture directory.
   - Tag map JSON path is provided via --tag-map.
+  - color paths can be PNG sequences or MKV videos (uses frame_index columns when present).
 
 Usage:
   python tools/estimate_camera_poses_from_apriltag.py /path/to/captures \
@@ -46,6 +47,8 @@ OBJECT_POINTS = np.array(
     ],
     dtype=np.float64,
 )
+
+VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".mov"}
 
 
 @dataclass
@@ -201,6 +204,37 @@ def resolve_color_path(capture_root: Path, camera_id: str, color_rel: str) -> Pa
     return capture_root / cam_dir / p
 
 
+def prefer_mp4_path(path: Path) -> Path:
+    if path.suffix.lower() == ".mkv":
+        mp4 = path.with_suffix(".mp4")
+        if mp4.exists():
+            return mp4
+    return path
+
+
+def is_video_path(path: Path) -> bool:
+    return path.suffix.lower() in VIDEO_EXTS
+
+
+def read_video_frame(cap: cv2.VideoCapture, frame_index: int) -> Optional[np.ndarray]:
+    if frame_index <= 0:
+        return None
+    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index - 1)
+    ok, frame = cap.read()
+    if not ok:
+        return None
+    return frame
+
+
+def parse_frame_index(value: str) -> Optional[int]:
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
 def build_correspondences(
     detections: List,
     tag_length: float,
@@ -316,6 +350,9 @@ def process_capture(
     if not frames_csv.exists():
         console.print(f"[pose] missing frames_aligned.csv in {capture_root}")
         return False
+    if should_skip_step(capture_root, "camera_poses_apriltag"):
+        console.print(f"[pose] skip {capture_root}, already processed")
+        return False
 
     with meta_path.open("r") as f:
         meta = json.load(f)
@@ -340,6 +377,8 @@ def process_capture(
 
     ok_count = 0
     err_count = 0
+    video_caps: Dict[str, cv2.VideoCapture] = {}
+    video_paths: Dict[str, Path] = {}
 
     with frames_csv.open("r", newline="") as f:
         reader = csv.DictReader(f)
@@ -365,9 +404,11 @@ def process_capture(
                     continue
                 if cid == ref_id:
                     color_rel = row.get("ref_color", "")
+                    frame_idx = parse_frame_index(row.get("ref_frame_index", ""))
                     delta_ms = 0.0
                 else:
                     color_rel = row.get(f"{cid}_color", "")
+                    frame_idx = parse_frame_index(row.get(f"{cid}_frame_index", ""))
                     delta_ms = parse_float(row.get(f"{cid}_delta_ms", ""))
                 entry = {
                     "frame_index": frame_index,
@@ -384,7 +425,7 @@ def process_capture(
                     err_count += 1
                     progress.advance(task_id)
                     continue
-                color_path = resolve_color_path(capture_root, cid, color_rel)
+                color_path = prefer_mp4_path(resolve_color_path(capture_root, cid, color_rel))
                 if not color_path.exists():
                     entry.update(
                         {
@@ -397,7 +438,43 @@ def process_capture(
                     err_count += 1
                     progress.advance(task_id)
                     continue
-                image = cv2.imread(str(color_path))
+                if is_video_path(color_path):
+                    if frame_idx is None:
+                        entry.update(
+                            {
+                                "status": "error",
+                                "error": "missing_frame_index",
+                                "color_path_resolved": str(color_path),
+                            }
+                        )
+                        output["poses"].append(entry)
+                        err_count += 1
+                        progress.advance(task_id)
+                        continue
+                    cap = video_caps.get(cid)
+                    if cap is None or video_paths.get(cid) != color_path:
+                        if cap is not None:
+                            cap.release()
+                        cap = cv2.VideoCapture(str(color_path))
+                        if not cap.isOpened():
+                            entry.update(
+                                {
+                                    "status": "error",
+                                    "error": "video_open_failed",
+                                    "color_path_resolved": str(color_path),
+                                }
+                            )
+                            output["poses"].append(entry)
+                            err_count += 1
+                            progress.advance(task_id)
+                            continue
+                        video_caps[cid] = cap
+                        video_paths[cid] = color_path
+                    image = read_video_frame(cap, frame_idx)
+                else:
+                    if frame_idx is None and color_path.suffix.lower() == ".png":
+                        frame_idx = parse_frame_index(color_path.stem)
+                    image = cv2.imread(str(color_path))
                 if image is None:
                     entry.update(
                         {
@@ -454,6 +531,8 @@ def process_capture(
     out_path = capture_root / output_name
     with out_path.open("w") as f:
         json.dump(output, f, indent=2)
+    for cap in video_caps.values():
+        cap.release()
     progress.remove_task(task_id)
     console.print(
         f"[pose] wrote {out_path} (ok={ok_count}, error={err_count}, frames={row_count})"
@@ -551,6 +630,20 @@ def main() -> int:
     if not any_written:
         return 1
     return 0
+
+
+def should_skip_step(capture_root: Path, step: str) -> bool:
+    marker_path = capture_root / "postprocess_markers.json"
+    if not marker_path.exists():
+        return False
+    try:
+        payload = json.loads(marker_path.read_text())
+    except json.JSONDecodeError:
+        return False
+    steps = payload.get("steps")
+    if not isinstance(steps, dict):
+        return False
+    return step in steps
 
 
 def update_marker(capture_root: Path, step: str, info: Dict) -> None:

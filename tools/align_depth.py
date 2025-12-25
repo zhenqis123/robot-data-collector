@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-Depth-to-color alignment using saved meta.json and PNG frames.
+Depth-to-color alignment using saved meta.json and PNG frames or HDF5 depth.
 
 Usage:
-  python -m tools.align /path/to/captures_root --workers 4
+  python -m tools.align /path/to/captures_root --workers 4 --delete-original-depth true
 
 Searches recursively for meta.json files and, for each camera:
 - reads intrinsics/extrinsics/depth scale
-- aligns depth/*.png to color resolution
+- aligns depth/*.png or depth.h5 to color resolution
 - writes to depth_aligned/*.png
+- optionally deletes the original depth files if --delete-original-depth is set.
 """
 from __future__ import annotations
 
@@ -23,8 +24,12 @@ from tqdm import tqdm
 import concurrent.futures
 from functools import lru_cache
 import os
-import json
 from datetime import datetime, timezone
+
+try:
+    import h5py
+except ImportError:
+    h5py = None
 
 
 def find_meta_files(root: Path, max_depth: int) -> List[Path]:
@@ -154,7 +159,7 @@ def sanitize_camera_id(cam_id: str) -> str:
     return "".join(ch if (ch.isalnum() or ch in "-_") else "_" for ch in cam_id)
 
 
-def _process_one(path: Path, color_dir: Path, out_dir: Path, meta: Dict) -> None:
+def _process_png(path: Path, color_dir: Path, out_dir: Path, meta: Dict, delete_original_depth: bool) -> None:
     stem = path.stem
     color_path = color_dir / f"{stem}.png"
     if not color_path.exists():
@@ -165,41 +170,86 @@ def _process_one(path: Path, color_dir: Path, out_dir: Path, meta: Dict) -> None
     aligned = compute_alignment(depth_raw, meta)
     cv2.imwrite(str(out_dir / f"{stem}.png"), aligned)
 
+    if delete_original_depth:
+        os.remove(path)
 
-def process_capture(meta_path: Path, workers: int) -> None:
+def _process_depth_array(index: int, depth_raw: np.ndarray, out_dir: Path, meta: Dict) -> None:
+    if depth_raw is None or depth_raw.dtype != np.uint16:
+        return
+    aligned = compute_alignment(depth_raw, meta)
+    out_path = out_dir / f"{index:06d}.png"
+    cv2.imwrite(str(out_path), aligned)
+
+
+def process_capture(meta_path: Path, workers: int, delete_original_depth: bool) -> None:
     meta = load_meta(meta_path)
     cam_entries = {c["id"]: c for c in meta.get("cameras", [])}
     base = meta_path.parent
+    if should_skip_step(base, "align_depth"):
+        print(f"[align] skip {base}, already aligned depth")
+        return
     processed_cams = []
     for cam_id, cam in cam_entries.items():
         cam_dir = base / sanitize_camera_id(str(cam_id))
         depth_dir = cam_dir / "depth"
         color_dir = cam_dir / "color"
-        if not depth_dir.exists() or not color_dir.exists():
-            continue
-        out_dir = cam_dir / "depth_aligned"
-        out_dir.mkdir(parents=True, exist_ok=True)
         m = prepare_meta(cam)
-        depth_files = sorted(depth_dir.glob("*.png"))
-        if not depth_files:
+        depth_files = sorted(depth_dir.glob("*.png")) if depth_dir.exists() else []
+        if depth_files and color_dir.exists():
+            out_dir = cam_dir / "depth_aligned"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+                for _ in tqdm(
+                    ex.map(
+                        _process_png,
+                        depth_files,
+                        [color_dir] * len(depth_files),
+                        [out_dir] * len(depth_files),
+                        [m] * len(depth_files),
+                        [delete_original_depth] * len(depth_files),
+                    ),
+                    total=len(depth_files),
+                    desc=f"align {cam_id}",
+                    unit="frame",
+                    leave=False,
+                ):
+                    pass
+            print(f"[align] processed PNG depth for camera {cam_id} in {base}")
+            processed_cams.append(str(cam_id))
             continue
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
-            for _ in tqdm(
-                ex.map(
-                    _process_one,
-                    depth_files,
-                    [color_dir] * len(depth_files),
-                    [out_dir] * len(depth_files),
-                    [m] * len(depth_files),
-                ),
-                total=len(depth_files),
-                desc=f"align {cam_id}",
-                unit="frame",
-                leave=False,
-            ):
-                pass
-        print(f"[align] processed camera {cam_id} in {base}")
-        processed_cams.append(str(cam_id))
+
+        depth_h5 = cam_dir / "depth.h5"
+        if depth_h5.exists():
+            if h5py is None:
+                print(f"[align] skipping {cam_id}: h5py not installed for {depth_h5}")
+                continue
+            with h5py.File(depth_h5, "r") as f:
+                if "depth" not in f:
+                    print(f"[align] skipping {cam_id}: missing /depth dataset in {depth_h5}")
+                    continue
+                dset = f["depth"]
+                total = dset.shape[0]
+                if total <= 0:
+                    continue
+                kc = m["Kc"]
+                aligned_path = cam_dir / "depth_aligned.h5"
+                with h5py.File(aligned_path, "w") as out_f:
+                    out_dset = out_f.create_dataset(
+                        "depth",
+                        shape=(total, int(kc["h"]), int(kc["w"])),
+                        dtype=np.uint16,
+                        chunks=(1, int(kc["h"]), int(kc["w"])),
+                    )
+                    for idx in tqdm(range(total), desc=f"align {cam_id}", unit="frame", leave=False):
+                        depth_raw = dset[idx]
+                        if depth_raw is None or depth_raw.dtype != np.uint16:
+                            continue
+                        aligned = compute_alignment(depth_raw, m)
+                        out_dset[idx] = aligned
+            print(f"[align] processed HDF5 depth for camera {cam_id} in {base}")
+            processed_cams.append(str(cam_id))
+            if delete_original_depth:
+                depth_h5.unlink(missing_ok=True)
     if processed_cams:
         update_marker(
             base,
@@ -208,6 +258,7 @@ def process_capture(meta_path: Path, workers: int) -> None:
                 "cameras": processed_cams,
                 "workers": workers,
                 "output_dir": "depth_aligned",
+                "output_file": "depth_aligned.h5",
             },
         )
 
@@ -219,15 +270,19 @@ def main():
     parser.add_argument("--find-meta", type=str, default="true",
                         choices=["true", "false"],
                         help="Search meta.json recursively (true) or only root/*/meta.json (false)")
+    parser.add_argument("--delete-original-depth", type=str, default="false",
+                        choices=["true", "false"],
+                        help="Whether to delete original depth files after alignment")
     args = parser.parse_args()
     root = Path(args.root).expanduser().resolve()
     find_meta = args.find_meta.lower() == "true"
+    delete_original_depth = args.delete_original_depth.lower() == "true"
     metas = list_meta_files(root, find_meta, 2)
     if not metas:
         print("No meta.json found")
         return
     for m in metas:
-        process_capture(m, max(1, args.workers))
+        process_capture(m, max(1, args.workers), delete_original_depth)
 
 
 def update_marker(capture_root: Path, step: str, info: Dict) -> None:
@@ -249,6 +304,20 @@ def update_marker(capture_root: Path, step: str, info: Dict) -> None:
     payload["updated_at"] = done_at
     marker_path.write_text(json.dumps(payload, indent=2))
     print(f"[align] updated marker {marker_path}")
+
+
+def should_skip_step(capture_root: Path, step: str) -> bool:
+    marker_path = capture_root / "postprocess_markers.json"
+    if not marker_path.exists():
+        return False
+    try:
+        payload = json.loads(marker_path.read_text())
+    except json.JSONDecodeError:
+        return False
+    steps = payload.get("steps")
+    if not isinstance(steps, dict):
+        return False
+    return step in steps
 
 
 if __name__ == "__main__":

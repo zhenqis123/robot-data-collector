@@ -16,6 +16,7 @@ import os
 import re
 from pathlib import Path
 from typing import Dict, List, Optional
+from datetime import datetime, timezone
 
 
 FRAME_RE = re.compile(r"(\d+)$")
@@ -38,17 +39,17 @@ def parse_frame_index(path_value: str) -> Optional[int]:
         return None
 
 
-def sort_timestamps_csv(path: Path, dry_run: bool) -> None:
+def sort_timestamps_csv(path: Path, dry_run: bool) -> bool:
     if not path.exists():
         print(f"[sort] missing {path}")
-        return
+        return False
     with path.open("r", newline="") as f:
         reader = csv.DictReader(f)
         fieldnames = reader.fieldnames or []
         rows = list(reader)
     if not fieldnames or not rows:
         print(f"[sort] skip {path}, no rows")
-        return
+        return False
 
     def sort_key(item):
         idx, row = item
@@ -59,11 +60,11 @@ def sort_timestamps_csv(path: Path, dry_run: bool) -> None:
     sorted_rows = [row for _, row in sorted(indexed_rows, key=sort_key)]
     if sorted_rows == rows:
         print(f"[sort] already sorted: {path}")
-        return
+        return False
 
     if dry_run:
         print(f"[sort] would update {path} ({len(rows)} rows)")
-        return
+        return False
 
     tmp = path.with_suffix(path.suffix + ".tmp")
     with tmp.open("w", newline="") as f:
@@ -72,6 +73,7 @@ def sort_timestamps_csv(path: Path, dry_run: bool) -> None:
         writer.writerows(sorted_rows)
     tmp.replace(path)
     print(f"[sort] updated {path} ({len(rows)} rows)")
+    return True
 
 
 def find_meta_files(root: Path, max_depth: int) -> List[Path]:
@@ -119,6 +121,41 @@ def timestamps_from_capture_root(capture_root: Path) -> List[Path]:
     return paths
 
 
+def should_skip_step(capture_root: Path, step: str) -> bool:
+    marker_path = capture_root / "postprocess_markers.json"
+    if not marker_path.exists():
+        return False
+    try:
+        payload = json.loads(marker_path.read_text())
+    except json.JSONDecodeError:
+        return False
+    steps = payload.get("steps")
+    if not isinstance(steps, dict):
+        return False
+    return step in steps
+
+
+def update_marker(capture_root: Path, step: str, info: Dict) -> None:
+    marker_path = capture_root / "postprocess_markers.json"
+    payload = {}
+    if marker_path.exists():
+        try:
+            payload = json.loads(marker_path.read_text())
+        except json.JSONDecodeError:
+            payload = {}
+    steps = payload.get("steps")
+    if not isinstance(steps, dict):
+        steps = {}
+    done_at = datetime.now(timezone.utc).isoformat()
+    entry = dict(info)
+    entry["done_at"] = done_at
+    steps[step] = entry
+    payload["steps"] = steps
+    payload["updated_at"] = done_at
+    marker_path.write_text(json.dumps(payload, indent=2))
+    print(f"[sort] updated marker {marker_path}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sort timestamps.csv by frame index.")
     parser.add_argument("root", help="timestamps.csv path, capture root, or dataset root")
@@ -139,8 +176,22 @@ def main() -> None:
         return
 
     if (root / "meta.json").exists():
-        for ts_path in timestamps_from_capture_root(root):
-            sort_timestamps_csv(ts_path, args.dry_run)
+        if should_skip_step(root, "sort_timestamps"):
+            print(f"[sort] skip {root}, already sorted")
+            return
+        ts_paths = timestamps_from_capture_root(root)
+        updated = False
+        for ts_path in ts_paths:
+            updated = sort_timestamps_csv(ts_path, args.dry_run) or updated
+        if ts_paths and not args.dry_run:
+            update_marker(
+                root,
+                "sort_timestamps",
+                {
+                    "files": [p.name for p in ts_paths],
+                    "updated": updated,
+                },
+            )
         return
 
     metas = list_meta_files(root, find_meta, 2)
@@ -148,8 +199,23 @@ def main() -> None:
         print("[sort] no meta.json found")
         return
     for meta in metas:
-        for ts_path in timestamps_from_capture_root(meta.parent):
-            sort_timestamps_csv(ts_path, args.dry_run)
+        capture_root = meta.parent
+        if should_skip_step(capture_root, "sort_timestamps"):
+            print(f"[sort] skip {capture_root}, already sorted")
+            continue
+        ts_paths = timestamps_from_capture_root(capture_root)
+        updated = False
+        for ts_path in ts_paths:
+            updated = sort_timestamps_csv(ts_path, args.dry_run) or updated
+        if ts_paths and not args.dry_run:
+            update_marker(
+                capture_root,
+                "sort_timestamps",
+                {
+                    "files": [p.name for p in ts_paths],
+                    "updated": updated,
+                },
+            )
 
 
 if __name__ == "__main__":

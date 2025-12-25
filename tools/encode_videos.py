@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Video utility:
-- Encode color PNG sequences to H.264 MP4 for all cameras in a capture
+- Encode color PNG sequences or MKV videos to H.264 MP4 for all cameras in a capture
 
 Usage:
   python -m tools.videos /path/to/capture_root --fps 30 --output-name color.mp4
@@ -20,6 +20,9 @@ from typing import Callable, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 from tqdm import tqdm
+
+
+VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".mov"}
 
 
 def encode_color_frames_from_list(frames: List[Path], output: Path, fps: float = 30.0) -> int:
@@ -49,6 +52,34 @@ def encode_color_frames_from_list(frames: List[Path], output: Path, fps: float =
     return count
 
 
+def encode_video_file(input_path: Path, output: Path, fps: float = 30.0) -> int:
+    cap = cv2.VideoCapture(str(input_path))
+    if not cap.isOpened():
+        raise RuntimeError(f"Failed to open video {input_path}")
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    if w <= 0 or h <= 0:
+        cap.release()
+        raise RuntimeError(f"Invalid video size for {input_path}")
+    if fps <= 0:
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(str(output), fourcc, fps, (w, h))
+    count = 0
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        if frame.shape[0] != h or frame.shape[1] != w:
+            frame = cv2.resize(frame, (w, h))
+        writer.write(frame)
+        count += 1
+    cap.release()
+    writer.release()
+    print(f"[videos] wrote {output} from {count} frames")
+    return count
+
+
 def derive_cameras(root: Path) -> List[str]:
     aligned_path = root / "frames_aligned.csv"
     if aligned_path.exists():
@@ -73,17 +104,66 @@ def derive_cameras(root: Path) -> List[str]:
     return []
 
 
+def read_alignment_rows(root: Path) -> Tuple[List[Dict[str, str]], str]:
+    aligned_path = root / "frames_aligned.csv"
+    if not aligned_path.exists():
+        return [], ""
+    with aligned_path.open("r", newline="") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+    if not rows:
+        return [], ""
+    ref_cam = rows[0].get("ref_camera", "") or ""
+    return rows, ref_cam
+
+
+def read_camera_timestamps(csv_path: Path) -> Tuple[List[float], List[int]]:
+    timestamps: List[float] = []
+    indices: List[int] = []
+    if not csv_path.exists():
+        return timestamps, indices
+    with csv_path.open("r", newline="") as f:
+        reader = csv.DictReader(f)
+        counter = 0
+        for row in reader:
+            ts_val = row.get("timestamp_ms", "")
+            if ts_val == "":
+                continue
+            try:
+                ts = float(ts_val)
+            except ValueError:
+                continue
+            frame_index = row.get("frame_index", "")
+            idx = None
+            if frame_index:
+                try:
+                    idx = int(frame_index)
+                except ValueError:
+                    idx = None
+            if idx is None:
+                color_path = row.get("color_path", "") or row.get("rgb_path", "")
+                stem = Path(color_path).stem
+                if stem.isdigit():
+                    idx = int(stem)
+            if idx is None:
+                counter += 1
+                idx = counter
+            timestamps.append(ts)
+            indices.append(idx)
+    return timestamps, indices
+
+
 def sanitize_camera_id(cam_id: str) -> str:
     return "".join(ch if (ch.isalnum() or ch in "-_") else "_" for ch in cam_id)
 
 
-def build_frame_lists(root: Path) -> Dict[str, List[Path]]:
+def build_inputs(root: Path) -> Dict[str, Dict[str, Optional[Path]]]:
     """
-    Build ordered color frame lists per camera.
+    Build ordered color inputs per camera.
     If frames_aligned.csv exists, use its order; otherwise fall back to sorted color/*.png.
     """
     aligned_path = root / "frames_aligned.csv"
-    result: Dict[str, List[Path]] = {}
+    result: Dict[str, Dict[str, Optional[Path]]] = {}
     if aligned_path.exists():
         with aligned_path.open("r", newline="") as f:
             reader = csv.DictReader(f)
@@ -93,20 +173,28 @@ def build_frame_lists(root: Path) -> Dict[str, List[Path]]:
                 # initialize lists
                 cams = derive_cameras(root)
                 for c in cams:
-                    result[c] = []
+                    result[c] = {"video": None, "frames": []}
                 for row in rows:
                     # reference camera
                     if ref_cam:
                         ref_color = row.get("ref_color", "")
                         if ref_color and ref_cam in result:
-                            result[ref_cam].append(root / sanitize_camera_id(ref_cam) / ref_color)
+                            ref_path = root / sanitize_camera_id(ref_cam) / ref_color
+                            if ref_path.suffix.lower() in VIDEO_EXTS:
+                                result[ref_cam]["video"] = ref_path
+                            else:
+                                result[ref_cam]["frames"].append(ref_path)
                     for key, val in row.items():
                         if key.endswith("_color") and key not in ("ref_color",):
                             cam_id = key.replace("_color", "")
                             if cam_id not in result:
-                                result[cam_id] = []
+                                result[cam_id] = {"video": None, "frames": []}
                             if val:
-                                result[cam_id].append(root / sanitize_camera_id(cam_id) / val)
+                                path = root / sanitize_camera_id(cam_id) / val
+                                if path.suffix.lower() in VIDEO_EXTS:
+                                    result[cam_id]["video"] = path
+                                else:
+                                    result[cam_id]["frames"].append(path)
     if result:
         return result
     # fallback: per camera sorted color/*.png
@@ -119,24 +207,154 @@ def build_frame_lists(root: Path) -> Dict[str, List[Path]]:
             color_dir = cam_dir / "color"
             frames = sorted(color_dir.glob("*.png"))
             if frames:
-                result[str(cid)] = frames
+                result[str(cid)] = {"video": None, "frames": frames}
     return result
+
+
+def build_aligned_inputs(
+    root: Path,
+) -> Tuple[Dict[str, Dict[str, Optional[Path]]], List[Dict[str, str]], str]:
+    rows, ref_cam = read_alignment_rows(root)
+    if not rows:
+        return {}, [], ""
+    result: Dict[str, Dict[str, Optional[Path]]] = {}
+    cams = derive_cameras(root)
+    for c in cams:
+        result[c] = {"video": None, "frames": []}
+    for row in rows:
+        if ref_cam:
+            ref_color = row.get("ref_color", "")
+            if ref_color:
+                ref_path = root / sanitize_camera_id(ref_cam) / ref_color
+                payload = result.setdefault(ref_cam, {"video": None, "frames": []})
+                if ref_path.suffix.lower() in VIDEO_EXTS:
+                    payload["video"] = ref_path
+                else:
+                    payload["frames"].append(ref_path)
+        for key, val in row.items():
+            if key.endswith("_color") and key not in ("ref_color",):
+                cam_id = key.replace("_color", "")
+                if val:
+                    path = root / sanitize_camera_id(cam_id) / val
+                    payload = result.setdefault(cam_id, {"video": None, "frames": []})
+                    if path.suffix.lower() in VIDEO_EXTS:
+                        payload["video"] = path
+                    else:
+                        payload["frames"].append(path)
+    return result, rows, ref_cam
+
+
+def encode_video_from_alignment(
+    video_path: Path,
+    output: Path,
+    fps: float,
+    ref_timestamps: List[float],
+    aligned_indices: List[int],
+    cam_timestamps: List[float],
+    cam_indices: List[int],
+) -> int:
+    if aligned_indices and len(aligned_indices) != len(ref_timestamps):
+        raise RuntimeError("Aligned frame indices size mismatch")
+    if not ref_timestamps:
+        raise RuntimeError("Missing timestamps for aligned encode")
+    if not aligned_indices and (not cam_timestamps or not cam_indices):
+        raise RuntimeError("Missing timestamps for aligned encode")
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        raise RuntimeError(f"Failed to open video {video_path}")
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    if w <= 0 or h <= 0:
+        cap.release()
+        raise RuntimeError(f"Invalid video size for {video_path}")
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(str(output), fourcc, fps, (w, h))
+    count = 0
+    for i, ts in enumerate(tqdm(ref_timestamps, desc=f"align {output.name}", unit="frame", leave=False)):
+        if aligned_indices:
+            frame_index = aligned_indices[i]
+        else:
+            idx = nearest_frame_index(cam_timestamps, ts)
+            if idx is None:
+                continue
+            frame_index = cam_indices[idx]
+        if frame_index <= 0:
+            continue
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index - 1)
+        ok, frame = cap.read()
+        if not ok:
+            continue
+        writer.write(frame)
+        count += 1
+    cap.release()
+    writer.release()
+    print(f"[videos] wrote {output} from {count} aligned frames")
+    return count
 
 
 def auto_process(root: Path, fps: float, output_name: str) -> None:
     root = root.expanduser().resolve()
-    frame_lists = build_frame_lists(root)
-    if not frame_lists:
+    if should_skip_step(root, "encode_videos"):
+        print(f"[videos] skip {root}, already encoded")
+        return
+    inputs, aligned_rows, ref_cam = build_aligned_inputs(root)
+    if aligned_rows:
+        ref_timestamps = []
+        valid_rows: List[Dict[str, str]] = []
+        for row in aligned_rows:
+            value = row.get("ref_timestamp_ms", "")
+            if value == "":
+                continue
+            try:
+                ref_timestamps.append(float(value))
+            except ValueError:
+                continue
+            valid_rows.append(row)
+    else:
+        inputs = build_inputs(root)
+        ref_timestamps = []
+        valid_rows = []
+        ref_cam = ""
+
+    if not inputs:
         print(f"[videos] skip {root}, no frames_aligned.csv or frames found")
         return
     encoded: Dict[str, int] = {}
-    for cid, frames in frame_lists.items():
-        if not frames:
-            continue
+    for cid, payload in inputs.items():
+        frames = payload.get("frames") or []
+        video_path = payload.get("video")
         out = root / sanitize_camera_id(str(cid)) / output_name
         try:
-            count = encode_color_frames_from_list(frames, out, fps)
-            encoded[str(cid)] = count
+            if video_path:
+                if video_path.resolve() == out.resolve():
+                    print(f"[videos] skip {cid}: output matches source {video_path.name}")
+                    continue
+                if aligned_rows and ref_cam and cid != ref_cam and ref_timestamps:
+                    aligned_indices = []
+                    key = f"{cid}_frame_index"
+                    for row in valid_rows:
+                        value = row.get(key, "")
+                        if value == "":
+                            aligned_indices.append(0)
+                            continue
+                        try:
+                            aligned_indices.append(int(value))
+                        except ValueError:
+                            aligned_indices.append(0)
+                    if not any(idx > 0 for idx in aligned_indices):
+                        aligned_indices = []
+                    ts_path = root / sanitize_camera_id(str(cid)) / "timestamps.csv"
+                    cam_ts, cam_idx = read_camera_timestamps(ts_path)
+                    count = encode_video_from_alignment(
+                        video_path, out, fps, ref_timestamps, aligned_indices, cam_ts, cam_idx
+                    )
+                    encoded[str(cid)] = count
+                else:
+                    count = encode_video_file(video_path, out, fps)
+                    encoded[str(cid)] = count
+            elif frames:
+                count = encode_color_frames_from_list(frames, out, fps)
+                encoded[str(cid)] = count
         except Exception as exc:
             print(f"[videos] skip {cid}: {exc}")
     if encoded:
@@ -234,7 +452,10 @@ def update_jsonl_with_video_position(
                 idx = nearest_frame_index(timestamps, ts)
                 if idx is not None:
                     obj["video_frame_index"] = idx
-                    obj["video_time_s"] = idx / fps
+                    if timestamps:
+                        obj["video_time_s"] = (ts - timestamps[0]) / 1000.0
+                    else:
+                        obj["video_time_s"] = idx / fps
                     updated += 1
             rows.append(obj)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -248,7 +469,7 @@ def update_jsonl_with_video_position(
     print(f"[videos] updated {updated} entries with video positions in {path.name}")
 
 
-def update_camera_poses_with_video_position(path: Path, fps: float) -> None:
+def update_camera_poses_with_video_position(path: Path, fps: float, timestamps: List[float]) -> None:
     if not path.exists():
         return
     data = json.loads(path.read_text())
@@ -259,7 +480,10 @@ def update_camera_poses_with_video_position(path: Path, fps: float) -> None:
         if isinstance(frame_index, (int, float)):
             frame_idx = int(frame_index)
             pose["video_frame_index"] = frame_idx
-            pose["video_time_s"] = frame_idx / fps
+            if timestamps and 0 <= frame_idx < len(timestamps):
+                pose["video_time_s"] = (timestamps[frame_idx] - timestamps[0]) / 1000.0
+            else:
+                pose["video_time_s"] = frame_idx / fps
             updated += 1
     data["poses"] = poses
     path.write_text(json.dumps(data, indent=2))
@@ -289,7 +513,7 @@ def annotate_video_positions(root: Path, fps: float) -> None:
         if isinstance(obj.get("timestamp_ms"), (int, float))
         else None,
     )
-    update_camera_poses_with_video_position(poses_path, fps)
+    update_camera_poses_with_video_position(poses_path, fps, timestamps)
 
 
 def update_marker(capture_root: Path, step: str, info: Dict) -> None:
@@ -311,6 +535,20 @@ def update_marker(capture_root: Path, step: str, info: Dict) -> None:
     payload["updated_at"] = done_at
     marker_path.write_text(json.dumps(payload, indent=2))
     print(f"[videos] updated marker {marker_path}")
+
+
+def should_skip_step(capture_root: Path, step: str) -> bool:
+    marker_path = capture_root / "postprocess_markers.json"
+    if not marker_path.exists():
+        return False
+    try:
+        payload = json.loads(marker_path.read_text())
+    except json.JSONDecodeError:
+        return False
+    steps = payload.get("steps")
+    if not isinstance(steps, dict):
+        return False
+    return step in steps
 
 
 def find_meta_files(root: Path, max_depth: int) -> List[Path]:
