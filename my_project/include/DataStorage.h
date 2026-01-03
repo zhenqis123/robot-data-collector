@@ -7,6 +7,7 @@
 #include <chrono>
 #include <optional>
 #include <vector>
+#include <cstdint>
 
 #include "CameraInterface.h"
 
@@ -55,6 +56,7 @@ public:
 
     void logEvent(const std::string &eventName);
     void logAnnotation(const AnnotationEntry &entry);
+    void logStepTiming(const std::string &stepId, int64_t startMs, int64_t endMs);
 
 private:
     std::string _basePath;

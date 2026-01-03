@@ -1,0 +1,98 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_tangram_01",
+    "name": "Tangram puzzle setup",
+    "name_cn": "七巧板场景",
+    "description": "A table with a set of 7 tangram pieces scattered",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "tangram_set",
+        "category": "puzzle_set",
+        "state": {
+          "placement": "on_table",
+          "relative": "scattered, 7 pieces total"
+        }
+      },
+      {
+        "object_id": "obj_2",
+        "name": "puzzle_mat",
+        "category": "surface",
+        "state": {
+          "placement": "on_table",
+          "relative": "center, working area"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_tangram_assemble_cycle",
+    "name": "Assemble and disassemble Tangram",
+    "name_cn": "七巧板拼搭与拆解",
+    "description": "Assemble the scattered pieces into a square shape and then scatter them back",
+    "spoken_prompt": "Task: We will play Tangram. The goal is to assemble the pieces into a square, and then scatter them.",
+    "spoken_prompt_cn": "任务描述：我们要玩七巧板。目标是将这些碎片拼成一个正方形，然后再把它们打乱。",
+    "subtasks": [
+      {
+        "id": "st_tangram_flow",
+        "description": "Execute the assembly and disassembly sequence",
+        "spoken_prompt": "Subtask: Please assemble the square and then disassemble it.",
+        "spoken_prompt_cn": "子任务描述：请拼出正方形，然后再拆开。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "tangram_set",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_2",
+            "name": "puzzle_mat",
+            "role": "surface"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Assemble the 7 pieces into a square",
+            "spoken_prompt": "Step one: pick up the pieces and arrange them into a complete square.",
+            "spoken_prompt_cn": "第一步：拿起七巧板碎片，将它们拼成一个完整的正方形。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "tangram_set",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_2",
+                "name": "puzzle_mat",
+                "role": "target_surface"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Disassemble the square and scatter pieces",
+            "spoken_prompt": "Step two: separate the pieces and scatter them back on the table.",
+            "spoken_prompt_cn": "第二步：把拼好的正方形拆开，将碎片散乱地放回桌面上。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "tangram_set",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_2",
+                "name": "puzzle_mat",
+                "role": "source"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "The square in Step 1 must be formed without overlapping pieces and without gaps; Step 2 should result in a scattered state."
+  }
+}

@@ -67,6 +67,11 @@ struct FrameWriter
 std::unique_ptr<FrameWriter> makePngWriter(const std::string &deviceId,
                                            const std::string &basePath,
                                            Logger &logger);
+std::unique_ptr<FrameWriter> makeGstHdf5Writer(const std::string &deviceId,
+                                               const std::string &basePath,
+                                               Logger &logger,
+                                               int colorFps,
+                                               int depthChunkSize);
 
 class CameraInterface
 {

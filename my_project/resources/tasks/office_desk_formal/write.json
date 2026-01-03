@@ -1,0 +1,130 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "study_desk_write_01",
+    "name": "Writing setup",
+    "name_cn": "书写场景",
+    "description": "A desk with a pen (capped) and a blank sheet of paper",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "pen",
+        "category": "stationery",
+        "state": {
+          "placement": "on_desk",
+          "relative": "center-right area, capped"
+        }
+      },
+      {
+        "object_id": "obj_2",
+        "name": "pen_cap",
+        "category": "stationery_part",
+        "state": {
+          "placement": "attached_to_pen",
+          "relative": "on the pen tip"
+        }
+      },
+      {
+        "object_id": "obj_3",
+        "name": "paper",
+        "category": "paper",
+        "state": {
+          "placement": "on_desk",
+          "relative": "center area"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_write_beingbeyond",
+    "name": "Write specific text",
+    "name_cn": "书写特定文字",
+    "description": "Uncap, write 'beingbeyond', and return pen to original state",
+    "spoken_prompt": "Task: We will practice writing. The goal is to uncap the pen, write 'beingbeyond', and return the pen to its original position.",
+    "spoken_prompt_cn": "任务描述：我们要进行写字任务。目标是拔开笔盖，写下“beingbeyond”，然后把笔放回原位。",
+    "subtasks": [
+      {
+        "id": "st_write_flow",
+        "description": "Execute the writing sequence and reset",
+        "spoken_prompt": "Subtask: Please perform the writing sequence.",
+        "spoken_prompt_cn": "子任务描述：请执行连贯的书写流程。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "pen",
+            "role": "tool"
+          },
+          {
+            "object_id": "obj_2",
+            "name": "pen_cap",
+            "role": "accessory"
+          },
+          {
+            "object_id": "obj_3",
+            "name": "paper",
+            "role": "target_surface"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Remove the cap from the pen",
+            "spoken_prompt": "Step one: pick up the pen and remove the cap.",
+            "spoken_prompt_cn": "第一步：拿起笔，拔掉笔盖。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "pen",
+                "role": "held"
+              },
+              {
+                "object_id": "obj_2",
+                "name": "pen_cap",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Write 'beingbeyond' on the paper",
+            "spoken_prompt": "Step two: write 'beingbeyond' on the paper.",
+            "spoken_prompt_cn": "第二步：在纸上写下“beingbeyond”。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "pen",
+                "role": "tool"
+              },
+              {
+                "object_id": "obj_3",
+                "name": "paper",
+                "role": "target"
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "description": "Recap the pen and return it to the original position",
+            "spoken_prompt": "Step three: put the cap back on and place the pen back to its original position.",
+            "spoken_prompt_cn": "第三步：把笔盖盖回去，并将笔放回原位。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "pen",
+                "role": "held"
+              },
+              {
+                "object_id": "obj_2",
+                "name": "pen_cap",
+                "role": "manipulated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Ensure 'beingbeyond' is legible; verify the pen is capped and returned to the exact starting location."
+  }
+}

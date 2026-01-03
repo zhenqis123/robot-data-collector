@@ -1,21 +1,29 @@
 #include "CameraInterface.h"
 
-#include <librealsense2/rs.hpp>
-
-#include <opencv2/imgproc.hpp>
-#include <opencv2/imgcodecs.hpp>
-#include <opencv2/videoio.hpp>
-#include <thread>
-#include <iomanip>
-#include <sstream>
-#include <filesystem>
-#include <memory>
 #include <algorithm>
-#include <utility>
+#include <cstring>
 #include <cctype>
+#include <condition_variable>
+#include <filesystem>
+#include <iomanip>
+#include <memory>
+#include <mutex>
+#include <queue>
+#include <sstream>
+#include <thread>
+#include <utility>
+#include <vector>
 
-#include "Logger.h"
+#include <gst/app/gstappsrc.h>
+#include <gst/gst.h>
+#include <gst/video/video.h>
+#include <hdf5.h>
+#include <librealsense2/rs.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/videoio.hpp>
+
 #include "IntrinsicsManager.h"
+#include "Logger.h"
 #include "NetworkDevice.h"
 #include "VDGloveInterface.h"
 #include "ViveInterface.h"
@@ -86,9 +94,9 @@ public:
     std::vector<CameraConfig::StreamConfig> getAvailableResolutions() const override
     {
         return {
-            {640, 480, 30, CameraConfig::StreamConfig::StreamType::Color},
-            {1280, 720, 30, CameraConfig::StreamConfig::StreamType::Color},
-            {1920, 1080, 30, CameraConfig::StreamConfig::StreamType::Color}
+            {640, 480, 30, 0, CameraConfig::StreamConfig::StreamType::Color},
+            {1280, 720, 30, 0, CameraConfig::StreamConfig::StreamType::Color},
+            {1920, 1080, 30, 0, CameraConfig::StreamConfig::StreamType::Color}
         };
     }
 
@@ -467,7 +475,11 @@ public:
 
     std::unique_ptr<FrameWriter> makeWriter(const std::string &basePath, Logger &logger) override
     {
-        return makePngWriter(name(), basePath, logger);
+        return makeGstHdf5Writer(name(),
+                                 basePath,
+                                 logger,
+                                 ensurePositive(_config.color.frameRate, ensurePositive(_config.frameRate, 30)),
+                                 _config.depth.chunkSize);
     }
 
     CaptureMetadata captureMetadata() const override
@@ -493,67 +505,380 @@ private:
 };
 } // namespace
 
-class PngFrameWriter : public FrameWriter
+class GstHdf5FrameWriter : public FrameWriter
 {
 public:
-    PngFrameWriter(const std::string &deviceId,
-                   const std::string &basePath,
-                   Logger &logger)
-        : _deviceId(deviceId), _basePath(basePath), _logger(logger)
+    GstHdf5FrameWriter(const std::string &deviceId,
+                       const std::string &basePath,
+                       Logger &logger,
+                       int colorFps,
+                       int depthChunkSize)
+        : _deviceId(deviceId),
+          _basePath(basePath),
+          _logger(logger),
+          _colorFps(colorFps > 0 ? colorFps : 30),
+          _depthChunkSize(depthChunkSize > 0 ? depthChunkSize : 0)
     {
+        const auto sanitized = sanitize(_deviceId);
+        _cameraDir = std::filesystem::path(_basePath) / sanitized;
+        std::error_code ec;
+        std::filesystem::create_directories(_cameraDir, ec);
+        _rgbPath = _cameraDir / "rgb.mkv";
+        _depthPath = _cameraDir / "depth.h5";
+        _worker = std::thread(&GstHdf5FrameWriter::worker, this);
+    }
+
+    ~GstHdf5FrameWriter() override
+    {
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            _stopped = true;
+        }
+        _cv.notify_all();
+        if (_worker.joinable())
+            _worker.join();
+        closeStreams();
     }
 
     bool write(const FrameData &frame) override
     {
         if (frame.image.empty() || _basePath.empty())
             return false;
-        std::lock_guard<std::mutex> lock(_mutex);
-        const auto sanitized = sanitize(_deviceId);
-        const auto cameraDir = std::filesystem::path(_basePath) / sanitized;
-        std::error_code ec;
-        std::filesystem::create_directories(cameraDir / "color", ec);
-        if (!frame.depth.empty())
-            std::filesystem::create_directories(cameraDir / "depth", ec);
 
-        ++_frameIndex;
-        std::ostringstream ss;
-        ss << std::setw(6) << std::setfill('0') << _frameIndex;
-        const auto frameName = ss.str();
+        FrameData copy;
+        copy.image = frame.image.clone();
+        copy.depth = frame.depth.clone();
+        copy.timestamp = frame.timestamp;
+        copy.deviceTimestampMs = frame.deviceTimestampMs;
+        copy.cameraId = frame.cameraId;
 
-        const auto colorPath = (cameraDir / "color" / (frameName + ".png")).string();
-        bool ok = cv::imwrite(colorPath, frame.image);
-        std::string depthRel;
-        if (!frame.depth.empty())
         {
-            const auto depthPath = (cameraDir / "depth" / (frameName + ".png")).string();
-            ok = ok && cv::imwrite(depthPath, frame.depth);
-            depthRel = (std::filesystem::path("depth") / (frameName + ".png")).string();
+            std::lock_guard<std::mutex> lock(_mutex);
+            _queue.push(std::move(copy));
         }
-        if (!ok)
-        {
-            _logger.error("Failed to store frame for %s", _deviceId.c_str());
-            return false;
-        }
-
-        if (!_tsStream.is_open())
-        {
-            auto filePath = cameraDir / "timestamps.csv";
-            const bool existed = std::filesystem::exists(filePath);
-            _tsStream.open(filePath.string(), std::ios::out | std::ios::app);
-            if (!existed)
-            {
-                _tsStream << "timestamp_iso,timestamp_ms,device_timestamp_ms,color_path,depth_path\n";
-            }
-        }
-        const auto iso = toIso(frame.timestamp);
-        const auto tsMs = std::chrono::duration_cast<std::chrono::milliseconds>(frame.timestamp.time_since_epoch()).count();
-        const auto colorRel = (std::filesystem::path("color") / (frameName + ".png")).string();
-        _tsStream << iso << "," << tsMs << "," << frame.deviceTimestampMs << "," << colorRel << "," << depthRel << "\n";
-        _tsStream.flush();
+        _cv.notify_one();
         return true;
     }
 
 private:
+    void worker()
+    {
+        while (true)
+        {
+            FrameData frame;
+            {
+                std::unique_lock<std::mutex> lock(_mutex);
+                _cv.wait(lock, [&]() { return !_queue.empty() || _stopped; });
+                if (_stopped && _queue.empty())
+                    break;
+                frame = std::move(_queue.front());
+                _queue.pop();
+            }
+
+            const uint64_t idx = ++_frameIndex;
+            const bool rgbOk = writeRgb(frame);
+            const bool depthOk = writeDepth(frame);
+            if (!rgbOk && !depthOk)
+            {
+                _logger.error("Failed to store frame for %s", _deviceId.c_str());
+                continue;
+            }
+
+            const auto iso = toIso(frame.timestamp);
+            const auto tsMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                  frame.timestamp.time_since_epoch())
+                                  .count();
+            {
+                std::lock_guard<std::mutex> lock(_tsMutex);
+                if (!_tsStream.is_open())
+                {
+                    auto filePath = _cameraDir / "timestamps.csv";
+                    const bool existed = std::filesystem::exists(filePath);
+                    _tsStream.open(filePath.string(), std::ios::out | std::ios::app);
+                    if (!existed)
+                        _tsStream << "frame_index,timestamp_iso,timestamp_ms,device_timestamp_ms,rgb_path,depth_path\n";
+                }
+                _tsStream << idx << "," << iso << "," << tsMs << "," << frame.deviceTimestampMs << ","
+                          << "rgb.mkv"
+                          << "," << (frame.depth.empty() ? "" : "depth.h5") << "\n";
+            }
+        }
+    }
+
+    bool writeRgb(const FrameData &frame)
+    {
+        if (frame.image.empty())
+            return false;
+        if (!_gstReady && !initGst(frame.image.cols, frame.image.rows))
+            return false;
+
+        cv::Mat image = frame.image;
+        if (!image.isContinuous())
+            image = image.clone();
+
+        const size_t bufferSize = image.total() * image.elemSize();
+        GstBuffer *buffer = gst_buffer_new_allocate(nullptr, bufferSize, nullptr);
+        if (!buffer)
+            return false;
+
+        GstMapInfo map;
+        if (!gst_buffer_map(buffer, &map, GST_MAP_WRITE))
+        {
+            gst_buffer_unref(buffer);
+            return false;
+        }
+        std::memcpy(map.data, image.data, bufferSize);
+        gst_buffer_unmap(buffer, &map);
+
+        if (!_ptsInitialized)
+        {
+            _firstTimestamp = frame.timestamp;
+            _ptsInitialized = true;
+        }
+        auto delta = frame.timestamp - _firstTimestamp;
+        auto ptsNs = std::chrono::duration_cast<std::chrono::nanoseconds>(delta).count();
+        if (ptsNs < 0)
+            ptsNs = 0;
+        GstClockTime pts = static_cast<GstClockTime>(ptsNs);
+        GstClockTime dur = _colorFps > 0 ? gst_util_uint64_scale_int(1, GST_SECOND, _colorFps) : GST_CLOCK_TIME_NONE;
+        GST_BUFFER_PTS(buffer) = pts;
+        GST_BUFFER_DTS(buffer) = pts;
+        GST_BUFFER_DURATION(buffer) = dur;
+
+        const GstFlowReturn ret = gst_app_src_push_buffer(GST_APP_SRC(_appsrc), buffer);
+        if (ret != GST_FLOW_OK)
+        {
+            _logger.warn("GStreamer push failed for %s: %d", _deviceId.c_str(), ret);
+            return false;
+        }
+        return true;
+    }
+
+    bool writeDepth(const FrameData &frame)
+    {
+        if (frame.depth.empty())
+            return false;
+        if (!_hdf5Ready && !initHdf5(frame.depth.cols, frame.depth.rows))
+            return false;
+
+        cv::Mat depthMat = frame.depth;
+        if (depthMat.type() != CV_16U)
+        {
+            if (!_depthTypeWarned)
+            {
+                _logger.warn("Depth frame type %d, converting to CV_16U for %s", depthMat.type(), _deviceId.c_str());
+                _depthTypeWarned = true;
+            }
+            depthMat.convertTo(depthMat, CV_16U);
+        }
+
+        const hsize_t newDims[3] = {static_cast<hsize_t>(_depthIndex + 1),
+                                    static_cast<hsize_t>(_depthHeight),
+                                    static_cast<hsize_t>(_depthWidth)};
+        if (H5Dset_extent(_h5Dataset, newDims) < 0)
+            return false;
+
+        hid_t filespace = H5Dget_space(_h5Dataset);
+        if (filespace < 0)
+            return false;
+        const hsize_t start[3] = {static_cast<hsize_t>(_depthIndex), 0, 0};
+        const hsize_t count[3] = {1, static_cast<hsize_t>(_depthHeight), static_cast<hsize_t>(_depthWidth)};
+        H5Sselect_hyperslab(filespace, H5S_SELECT_SET, start, nullptr, count, nullptr);
+
+        hid_t memspace = H5Screate_simple(3, count, nullptr);
+        const herr_t status = H5Dwrite(_h5Dataset, H5T_NATIVE_UINT16, memspace, filespace, H5P_DEFAULT,
+                                       depthMat.data);
+        H5Sclose(memspace);
+        H5Sclose(filespace);
+
+        if (status < 0)
+            return false;
+
+        ++_depthIndex;
+        if (_depthChunkSize > 0 && (_depthIndex % static_cast<uint64_t>(_depthChunkSize) == 0))
+            H5Fflush(_h5File, H5F_SCOPE_LOCAL);
+        return true;
+    }
+
+    GstElement *makeEncoder() const
+    {
+        const std::vector<const char *> candidates = {
+            "x264enc",
+            "openh264enc",
+            "avenc_h264"
+        };
+        for (const auto *name : candidates)
+        {
+            if (gst_element_factory_find(name))
+                return gst_element_factory_make(name, "encoder");
+        }
+        return nullptr;
+    }
+
+    bool initGst(int width, int height)
+    {
+        static std::once_flag gstInitFlag;
+        std::call_once(gstInitFlag, []() { gst_init(nullptr, nullptr); });
+
+        _pipeline = gst_pipeline_new(nullptr);
+        if (!_pipeline)
+            return false;
+
+        _appsrc = gst_element_factory_make("appsrc", "src");
+        GstElement *convert = gst_element_factory_make("videoconvert", "convert");
+        GstElement *encoder = makeEncoder();
+        GstElement *parse = gst_element_factory_make("h264parse", "parse");
+        GstElement *mux = gst_element_factory_make("matroskamux", "mux");
+        _filesink = gst_element_factory_make("filesink", "sink");
+
+        if (!_appsrc || !convert || !encoder || !parse || !mux || !_filesink)
+        {
+            if (!_appsrc)
+                _logger.error("Missing GStreamer element appsrc for %s", _deviceId.c_str());
+            if (!convert)
+                _logger.error("Missing GStreamer element videoconvert for %s", _deviceId.c_str());
+            if (!encoder)
+                _logger.error("Missing GStreamer element encoder (x264enc/openh264enc/avenc_h264) for %s",
+                              _deviceId.c_str());
+            if (!parse)
+                _logger.error("Missing GStreamer element h264parse for %s", _deviceId.c_str());
+            if (!mux)
+                _logger.error("Missing GStreamer element matroskamux for %s", _deviceId.c_str());
+            if (!_filesink)
+                _logger.error("Missing GStreamer element filesink for %s", _deviceId.c_str());
+            closeGst();
+            return false;
+        }
+
+        g_object_set(G_OBJECT(_filesink), "location", _rgbPath.string().c_str(), nullptr);
+        g_object_set(G_OBJECT(encoder),
+                     "tune", "zerolatency",
+                     "speed-preset", "ultrafast",
+                     "bitrate", 8000,
+                     nullptr);
+
+        GstCaps *caps = gst_caps_new_simple("video/x-raw",
+                                            "format", G_TYPE_STRING, "BGR",
+                                            "width", G_TYPE_INT, width,
+                                            "height", G_TYPE_INT, height,
+                                            "framerate", GST_TYPE_FRACTION, _colorFps, 1,
+                                            nullptr);
+        gst_app_src_set_caps(GST_APP_SRC(_appsrc), caps);
+        gst_caps_unref(caps);
+        g_object_set(G_OBJECT(_appsrc),
+                     "is-live", TRUE,
+                     "block", TRUE,
+                     "format", GST_FORMAT_TIME,
+                     nullptr);
+
+        gst_bin_add_many(GST_BIN(_pipeline), _appsrc, convert, encoder, parse, mux, _filesink, nullptr);
+        if (!gst_element_link_many(_appsrc, convert, encoder, parse, mux, _filesink, nullptr))
+        {
+            _logger.error("Failed to link GStreamer pipeline for %s", _deviceId.c_str());
+            closeGst();
+            return false;
+        }
+
+        const GstStateChangeReturn stateRet = gst_element_set_state(_pipeline, GST_STATE_PLAYING);
+        if (stateRet == GST_STATE_CHANGE_FAILURE)
+        {
+            _logger.error("Failed to start GStreamer pipeline for %s", _deviceId.c_str());
+            closeGst();
+            return false;
+        }
+        _gstReady = true;
+        return true;
+    }
+
+    bool initHdf5(int width, int height)
+    {
+        _depthWidth = width;
+        _depthHeight = height;
+
+        _h5File = H5Fcreate(_depthPath.string().c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+        if (_h5File < 0)
+            return false;
+
+        hsize_t dims[3] = {0, static_cast<hsize_t>(height), static_cast<hsize_t>(width)};
+        hsize_t maxDims[3] = {H5S_UNLIMITED, static_cast<hsize_t>(height), static_cast<hsize_t>(width)};
+        hid_t dataspace = H5Screate_simple(3, dims, maxDims);
+        if (dataspace < 0)
+        {
+            closeHdf5();
+            return false;
+        }
+
+        hid_t props = H5Pcreate(H5P_DATASET_CREATE);
+        const int chunkSize = _depthChunkSize > 0 ? _depthChunkSize : 1;
+        hsize_t chunkDims[3] = {static_cast<hsize_t>(chunkSize),
+                                static_cast<hsize_t>(height),
+                                static_cast<hsize_t>(width)};
+        H5Pset_chunk(props, 3, chunkDims);
+
+        _h5Dataset = H5Dcreate2(_h5File, "/depth", H5T_NATIVE_UINT16, dataspace, H5P_DEFAULT, props, H5P_DEFAULT);
+        H5Pclose(props);
+        H5Sclose(dataspace);
+
+        if (_h5Dataset < 0)
+        {
+            closeHdf5();
+            return false;
+        }
+        _hdf5Ready = true;
+        return true;
+    }
+
+    void closeStreams()
+    {
+        if (_tsStream.is_open())
+        {
+            _tsStream.flush();
+            _tsStream.close();
+        }
+        closeGst();
+        closeHdf5();
+    }
+
+    void closeGst()
+    {
+        if (!_pipeline)
+            return;
+        if (_appsrc)
+            gst_app_src_end_of_stream(GST_APP_SRC(_appsrc));
+        GstBus *bus = gst_element_get_bus(_pipeline);
+        if (bus)
+        {
+            GstMessage *msg = gst_bus_timed_pop_filtered(bus,
+                                                         2 * GST_SECOND,
+                                                         static_cast<GstMessageType>(GST_MESSAGE_ERROR |
+                                                                                     GST_MESSAGE_EOS));
+            if (msg)
+                gst_message_unref(msg);
+            gst_object_unref(bus);
+        }
+        gst_element_set_state(_pipeline, GST_STATE_NULL);
+        gst_object_unref(_pipeline);
+        _pipeline = nullptr;
+        _appsrc = nullptr;
+        _filesink = nullptr;
+        _gstReady = false;
+    }
+
+    void closeHdf5()
+    {
+        if (_h5Dataset >= 0)
+        {
+            H5Dclose(_h5Dataset);
+            _h5Dataset = H5I_INVALID_HID;
+        }
+        if (_h5File >= 0)
+        {
+            H5Fclose(_h5File);
+            _h5File = H5I_INVALID_HID;
+        }
+        _hdf5Ready = false;
+    }
+
     static std::string sanitize(std::string value)
     {
         for (auto &ch : value)
@@ -585,14 +910,46 @@ private:
     Logger &_logger;
     std::ofstream _tsStream;
     uint64_t _frameIndex{0};
+    std::mutex _tsMutex;
     std::mutex _mutex;
+    std::condition_variable _cv;
+    std::queue<FrameData> _queue;
+    bool _stopped{false};
+    std::thread _worker;
+    std::filesystem::path _cameraDir;
+    std::filesystem::path _rgbPath;
+    std::filesystem::path _depthPath;
+    int _colorFps{30};
+    int _depthChunkSize{0};
+    bool _gstReady{false};
+    bool _hdf5Ready{false};
+    bool _ptsInitialized{false};
+    bool _depthTypeWarned{false};
+    std::chrono::system_clock::time_point _firstTimestamp;
+    GstElement *_pipeline{nullptr};
+    GstElement *_appsrc{nullptr};
+    GstElement *_filesink{nullptr};
+    hid_t _h5File{H5I_INVALID_HID};
+    hid_t _h5Dataset{H5I_INVALID_HID};
+    int _depthWidth{0};
+    int _depthHeight{0};
+    uint64_t _depthIndex{0};
 };
 
 std::unique_ptr<FrameWriter> makePngWriter(const std::string &deviceId,
                                            const std::string &basePath,
                                            Logger &logger)
 {
-    return std::make_unique<PngFrameWriter>(deviceId, basePath, logger);
+    return std::make_unique<GstHdf5FrameWriter>(deviceId, basePath, logger, 30, 0);
+}
+
+std::unique_ptr<FrameWriter> makeGstHdf5Writer(const std::string &deviceId,
+                                               const std::string &basePath,
+                                               Logger &logger,
+                                               int colorFps,
+                                               int depthChunkSize)
+{
+    return std::make_unique<GstHdf5FrameWriter>(deviceId, basePath, logger, colorFps, depthChunkSize);
 }
 
 std::unique_ptr<CameraInterface> createCamera(const CameraConfig &config, Logger &logger)
@@ -616,7 +973,11 @@ std::unique_ptr<CameraInterface> createCamera(const CameraConfig &config, Logger
 
 std::unique_ptr<FrameWriter> SimulatedCamera::makeWriter(const std::string &basePath, Logger &logger)
 {
-    return makePngWriter(_label, basePath, logger);
+    return makeGstHdf5Writer(_label,
+                             basePath,
+                             logger,
+                             ensurePositive(_config.color.frameRate, ensurePositive(_config.frameRate, 30)),
+                             _config.depth.chunkSize);
 }
 
 CaptureMetadata SimulatedCamera::captureMetadata() const
@@ -635,7 +996,11 @@ CaptureMetadata SimulatedCamera::captureMetadata() const
 
 std::unique_ptr<FrameWriter> RealSenseCamera::makeWriter(const std::string &basePath, Logger &logger)
 {
-    return makePngWriter(name(), basePath, logger);
+    return makeGstHdf5Writer(name(),
+                             basePath,
+                             logger,
+                             ensurePositive(_config.color.frameRate, ensurePositive(_config.frameRate, 30)),
+                             _config.depth.chunkSize);
 }
 
 CaptureMetadata RealSenseCamera::captureMetadata() const

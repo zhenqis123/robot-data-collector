@@ -1,0 +1,139 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "bedroom_fold_cycle_01",
+    "name": "Folding setup",
+    "name_cn": "叠衣场景",
+    "description": "A flat surface with a short-sleeve t-shirt",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "t_shirt",
+        "category": "clothing",
+        "state": {
+          "placement": "on_bed",
+          "relative": "center, spread out"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_fold_unfold_tshirt",
+    "name": "Fold and unfold short-sleeve shirt",
+    "name_cn": "叠短袖并还原",
+    "description": "Fold a t-shirt neatly and then unfold it back to the original spread state",
+    "spoken_prompt": "Task: We will practice folding clothes. The goal is to fold this t-shirt neatly, and then unfold it back to its original state.",
+    "spoken_prompt_cn": "任务描述：我们要进行叠衣服任务。目标是将这件短袖T恤叠整齐，然后再把它展开恢复原状。",
+    "subtasks": [
+      {
+        "id": "st_fold_unfold_sequence",
+        "description": "Execute the folding and unfolding sequence",
+        "spoken_prompt": "Subtask: Please fold the shirt and then unfold it.",
+        "spoken_prompt_cn": "子任务描述：请先叠好衣服，然后再把它展开。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "t_shirt",
+            "role": "manipulated"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Spread the shirt flat and smooth out wrinkles",
+            "spoken_prompt": "Step one: spread the shirt completely flat and smooth out any wrinkles with your hands.",
+            "spoken_prompt_cn": "第一步：把衣服完全铺平，用手抚平所有的褶皱。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "t_shirt",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Fold the left side towards the center",
+            "spoken_prompt": "Step two: fold the left sleeve and about a quarter of the body towards the center.",
+            "spoken_prompt_cn": "第二步：把左边的袖子和部分衣身向中间折叠。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "t_shirt",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "description": "Fold the right side towards the center",
+            "spoken_prompt": "Step three: fold the right side towards the center so it overlaps slightly.",
+            "spoken_prompt_cn": "第三步：把右边的袖子和衣身也向中间折叠，形成长条状。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "t_shirt",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s4",
+            "description": "Fold the bottom up to the neckline (Complete Folding)",
+            "spoken_prompt": "Step four: fold the bottom hem up to the neckline to finish folding.",
+            "spoken_prompt_cn": "第四步：把衣服下摆向上翻折对齐领口，完成折叠。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "t_shirt",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s5",
+            "description": "Unfold the bottom half (Start Restoring)",
+            "spoken_prompt": "Step five: unfold the bottom half back down.",
+            "spoken_prompt_cn": "第五步：把刚才折上去的下摆展开，放回去。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "t_shirt",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s6",
+            "description": "Unfold the right side",
+            "spoken_prompt": "Step six: unfold the right side back to the right.",
+            "spoken_prompt_cn": "第六步：把右边的折叠展开，恢复到右边。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "t_shirt",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s7",
+            "description": "Unfold the left side and smooth out",
+            "spoken_prompt": "Step seven: unfold the left side and smooth the shirt flat again.",
+            "spoken_prompt_cn": "第七步：把左边的折叠展开，并将衣服重新铺平，恢复原样。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "t_shirt",
+                "role": "manipulated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Folding should be neat; when restoring, ensure the shirt is spread out flat again similar to the starting state."
+  }
+}

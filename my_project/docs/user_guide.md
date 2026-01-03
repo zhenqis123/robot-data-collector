@@ -18,7 +18,7 @@ cmake --build build
 ## Running
 1. Ensure `resources/config.json` describes your cameras (set `"type": "RealSense"` to use actual hardware).
 2. Create `resources/logs` (already tracked) and ensure the process can write to it.
-3. Execute `./build/DataCollectorApp`. Click **Open Cameras** to initialize streams, fill in **Capture Name / Subject Info / Save Path**, then use **Start/Stop/Pause/Resume Capture** to control recording while previews stay live (each RealSense view shows RGB + depth). Use the **Camera Settings** section to adjust color/depth resolution and FPS per device as needed.
+3. Execute `./build/DataCollectorApp`. Click **Open Cameras** to initialize streams, fill in **Capture Name / Subject Info**, then use **Start/Stop/Pause/Resume Capture** to control recording while previews stay live (each RealSense view shows RGB + depth). Use the **Camera Settings** section to adjust color/depth resolution and FPS per device as needed. Capture output root is defined by `captures_path` in `resources/config.json`.
 
 ## Configuration
 Override runtime parameters by editing `resources/config.json`. RealSense entries can define separate color/depth stream settings:
@@ -38,17 +38,29 @@ Override runtime parameters by editing `resources/config.json`. RealSense entrie
 ```
 Simple RGB cameras can omit the `depth` block and fall back to the `color` parameters.
 
-### ArUco Targets
+### Fiducial Targets (ArUco / AprilTag)
 Add detection targets under `aruco_targets`:
 ```json
 "aruco_targets": [
   {
+    "type": "aruco",
     "dictionary": "DICT_4X4_50",
     "marker_ids": [0, 1, 2]
   }
 ]
 ```
 Only the listed markers from the specified dictionary will be searched in each RGB frame. Detection results are written per capture under `<capture_path>/aruco/<camera>.csv`.
+
+To switch to AprilTag, set `type` to `"apriltag"` and provide a family (defaulting to `tagStandard41h12` if omitted):
+```json
+"aruco_targets": [
+  {
+    "type": "apriltag",
+    "family": "tagStandard41h12",
+    "marker_ids": [0, 1, 2]
+  }
+]
+```
 
 ## Storage Layout
 Recordings are organized hierarchically:

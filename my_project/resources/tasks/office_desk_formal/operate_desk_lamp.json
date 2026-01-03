@@ -1,0 +1,162 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "study_desk_lamp_01",
+    "name": "Desktop appliance setup",
+    "name_cn": "桌面电器场景",
+    "description": "A desk with a small lamp (unplugged) and a power strip",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "desk_lamp",
+        "category": "appliance",
+        "state": {
+          "placement": "on_desk",
+          "relative": "center-left, turned off"
+        }
+      },
+      {
+        "object_id": "obj_2",
+        "name": "power_plug",
+        "category": "appliance_part",
+        "state": {
+          "placement": "on_desk",
+          "relative": "near the lamp base, unplugged"
+        }
+      },
+      {
+        "object_id": "obj_3",
+        "name": "lamp_switch",
+        "category": "appliance_part",
+        "state": {
+          "placement": "on_lamp_base_or_cord",
+          "relative": "accessible"
+        }
+      },
+      {
+        "object_id": "obj_4",
+        "name": "power_strip",
+        "category": "socket",
+        "state": {
+          "placement": "on_desk",
+          "relative": "near the back edge, accessible"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_operate_lamp_cycle",
+    "name": "Operate desk lamp",
+    "name_cn": "操作小台灯",
+    "description": "Plug in, turn on, turn off, and unplug the desk lamp",
+    "spoken_prompt": "Task: We will operate the desk lamp. The goal is to plug it in, turn it on, turn it off, and then unplug it.",
+    "spoken_prompt_cn": "任务描述：我们要操作小台灯。目标是插上电源，打开台灯，关闭台灯，最后拔掉电源。",
+    "subtasks": [
+      {
+        "id": "st_lamp_operation_flow",
+        "description": "Execute the full operation cycle",
+        "spoken_prompt": "Subtask: Please perform the operation sequence.",
+        "spoken_prompt_cn": "子任务描述：请执行完整的操作流程。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "desk_lamp",
+            "role": "appliance"
+          },
+          {
+            "object_id": "obj_2",
+            "name": "power_plug",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_3",
+            "name": "lamp_switch",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_4",
+            "name": "power_strip",
+            "role": "target_socket"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Insert the plug into the power strip",
+            "spoken_prompt": "Step one: pick up the plug and insert it into the socket.",
+            "spoken_prompt_cn": "第一步：拿起插头，把它插进插座里。",
+            "involved_objects": [
+              {
+                "object_id": "obj_2",
+                "name": "power_plug",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_4",
+                "name": "power_strip",
+                "role": "target"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Press the switch to turn on the lamp",
+            "spoken_prompt": "Step two: press the switch to turn on the light.",
+            "spoken_prompt_cn": "第二步：按下开关，打开台灯。",
+            "involved_objects": [
+              {
+                "object_id": "obj_3",
+                "name": "lamp_switch",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_1",
+                "name": "desk_lamp",
+                "role": "effect_target"
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "description": "Press the switch to turn off the lamp",
+            "spoken_prompt": "Step three: press the switch again to turn off the light.",
+            "spoken_prompt_cn": "第三步：再次按下开关，关闭台灯。",
+            "involved_objects": [
+              {
+                "object_id": "obj_3",
+                "name": "lamp_switch",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_1",
+                "name": "desk_lamp",
+                "role": "effect_target"
+              }
+            ]
+          },
+          {
+            "id": "s4",
+            "description": "Remove the plug from the power strip",
+            "spoken_prompt": "Step four: pull the plug out of the socket and place it back on the desk.",
+            "spoken_prompt_cn": "第四步：把插头从插座里拔出来，放回桌面上。",
+            "involved_objects": [
+              {
+                "object_id": "obj_2",
+                "name": "power_plug",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_4",
+                "name": "power_strip",
+                "role": "source"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Ensure the plug is fully inserted in Step 1; verify the light actually turns on and off; final state should be unplugged."
+  }
+}

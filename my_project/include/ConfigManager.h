@@ -17,7 +17,9 @@ struct AudioPromptsConfig
 {
     bool enabled{false};
     float volume{1.0f};
-    std::string mode{"piper"};
+    std::string mode{"index_tts"};
+    std::string language{"chinese"};
+    bool keyframeOnly{false};
     std::unordered_map<std::string, std::string> keybindings;
     struct IndexTts
     {
@@ -56,14 +58,22 @@ struct CameraConfig
         int width = 0;
         int height = 0;
         int frameRate = 0;
+        int chunkSize = 0;
         StreamType streamType = StreamType::Color;
     };
     StreamConfig color;
     StreamConfig depth;
 };
 
+enum class FiducialType
+{
+    Aruco,
+    AprilTag
+};
+
 struct ArucoTarget
 {
+    FiducialType type{FiducialType::Aruco};
     std::string dictionary;
     std::vector<int> markerIds;
 };
@@ -82,6 +92,8 @@ public:
     bool updateCameraConfig(int id, const CameraConfig &config);
     const std::vector<ArucoTarget> &getArucoTargets() const { return _arucoTargets; }
     const std::string &getTasksRootPath() const { return _tasksRoot; }
+    const std::string &getCapturesRootPath() const { return _capturesRoot; }
+    double getDisplayFpsLimit() const { return _displayFpsLimit; }
     const VlmConfig &getVlmConfig() const { return _vlmConfig; }
     const AudioPromptsConfig &getAudioPromptsConfig() const { return _audioConfig; }
 
@@ -90,9 +102,12 @@ private:
     std::vector<ArucoTarget> _arucoTargets;
     std::string _path;
     std::string _tasksRoot;
+    std::string _capturesRoot;
+    double _displayFpsLimit{0.0};
     VlmConfig _vlmConfig;
     AudioPromptsConfig _audioConfig;
     Logger &_logger;
 
     static std::pair<int, int> parseResolution(const std::string &value);
+    static int defaultDepthChunkSize(int width, int height);
 };

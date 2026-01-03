@@ -8,6 +8,17 @@
 #include "Logger.h"
 #include <filesystem>
 
+namespace
+{
+int highestPowerOfTwo(int value)
+{
+    int result = 1;
+    while (result <= value / 2)
+        result *= 2;
+    return result;
+}
+} // namespace
+
 ConfigManager::ConfigManager(Logger &logger)
     : _logger(logger)
 {
@@ -35,6 +46,8 @@ bool ConfigManager::load(const std::string &path)
     _arucoTargets.clear();
     _vlmConfig = {};
     _audioConfig = {};
+    _capturesRoot.clear();
+    _displayFpsLimit = 0.0;
 
     const auto cameras = doc.object().value("cameras").toArray();
     for (const auto &entry : cameras)
@@ -69,12 +82,16 @@ bool ConfigManager::load(const std::string &path)
                 }
                 if (streamObj.contains("frame_rate"))
                     stream.frameRate = streamObj.value("frame_rate").toInt(stream.frameRate);
+                if (streamObj.contains("chunk_size"))
+                    stream.chunkSize = streamObj.value("chunk_size").toInt(0);
             }
             return stream;
         };
 
         config.color = streamFromObject(obj.value("color").toObject(), {width, height}, fps);
         config.depth = streamFromObject(obj.value("depth").toObject(), {width, height}, fps);
+        if (config.depth.chunkSize <= 0)
+            config.depth.chunkSize = defaultDepthChunkSize(config.depth.width, config.depth.height);
         config.width = config.color.width > 0 ? config.color.width : width;
         config.height = config.color.height > 0 ? config.color.height : height;
         config.frameRate = config.color.frameRate > 0 ? config.color.frameRate : fps;
@@ -100,13 +117,24 @@ bool ConfigManager::load(const std::string &path)
     {
         const auto obj = entry.toObject();
         ArucoTarget target;
-        target.dictionary = obj.value("dictionary").toString().toStdString();
+        const auto typeStr = obj.value("type").toString("aruco").toLower();
+        if (typeStr == "apriltag")
+            target.type = FiducialType::AprilTag;
+        else
+            target.type = FiducialType::Aruco;
+
+        const auto family = obj.value("family").toString().toStdString();
+        target.dictionary = !family.empty() ? family : obj.value("dictionary").toString().toStdString();
+        if (target.type == FiducialType::AprilTag && target.dictionary.empty())
+            target.dictionary = "tagStandard41h12";
         auto idsArray = obj.value("marker_ids").toArray();
         for (const auto &idVal : idsArray)
             target.markerIds.push_back(idVal.toInt());
         if (!target.dictionary.empty())
             _arucoTargets.push_back(std::move(target));
     }
+
+    _displayFpsLimit = doc.object().value("display_fps_limit").toDouble(0.0);
 
     // tasks_path
     {
@@ -120,6 +148,20 @@ bool ConfigManager::load(const std::string &path)
             candidate = configDir / candidate;
         _tasksRoot = candidate.lexically_normal().string();
         _logger.info("Tasks root set to: %s", _tasksRoot.c_str());
+    }
+
+    // captures_path
+    {
+        std::filesystem::path configPath(_path);
+        auto configDir = configPath.parent_path();
+        auto capturesPath = doc.object().value("captures_path").toString().toStdString();
+        if (capturesPath.empty())
+            capturesPath = "logs/captures";
+        std::filesystem::path candidate(capturesPath);
+        if (candidate.is_relative())
+            candidate = configDir / candidate;
+        _capturesRoot = candidate.lexically_normal().string();
+        _logger.info("Captures root set to: %s", _capturesRoot.c_str());
     }
 
     // vlm config
@@ -143,7 +185,12 @@ bool ConfigManager::load(const std::string &path)
         const auto audioObj = doc.object().value("audio_prompts").toObject();
         _audioConfig.enabled = audioObj.value("enabled").toBool(false);
         _audioConfig.volume = static_cast<float>(audioObj.value("volume").toDouble(1.0));
-        _audioConfig.mode = "index_tts";
+        _audioConfig.mode = audioObj.value("mode").toString("index_tts").toLower().toStdString();
+        _audioConfig.language = audioObj.value("language").toString("chinese").toLower().toStdString();
+        _audioConfig.keyframeOnly = audioObj.value("keyframe_only").toBool(false);
+        _audioConfig.indexTts.audioPaths.clear();
+        _audioConfig.texts.clear();
+        _audioConfig.keybindings.clear();
         const auto indexObj = audioObj.value("index_tts").toObject();
         _audioConfig.indexTts.endpoint = indexObj.value("endpoint").toString().toStdString();
         const auto refs = indexObj.value("audio_paths").toArray();
@@ -178,6 +225,25 @@ std::pair<int, int> ConfigManager::parseResolution(const std::string &value)
     const auto width = std::stoi(value.substr(0, pos));
     const auto height = std::stoi(value.substr(pos + 1));
     return {width, height};
+}
+
+int ConfigManager::defaultDepthChunkSize(int width, int height)
+{
+    if (width <= 0 || height <= 0)
+        return 0;
+    constexpr int64_t targetBytes = 32LL * 1024 * 1024;
+    const int64_t frameBytes = static_cast<int64_t>(width) * static_cast<int64_t>(height) * 2;
+    if (frameBytes <= 0)
+        return 0;
+    int chunk = static_cast<int>(targetBytes / frameBytes);
+    if (chunk < 1)
+        chunk = 1;
+    chunk = highestPowerOfTwo(chunk);
+    if (chunk < 4)
+        chunk = 4;
+    if (chunk > 128)
+        chunk = 128;
+    return chunk;
 }
 
 bool ConfigManager::updateCameraConfig(int id, const CameraConfig &config)

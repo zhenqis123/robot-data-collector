@@ -10,6 +10,7 @@
 #include <vector>
 #include <functional>
 #include <unordered_set>
+#include <chrono>
 
 #include "CameraInterface.h"
 #include "CameraStats.h"
@@ -42,7 +43,8 @@ public:
                 DataStorage &storage,
                 Preview &preview,
                 Logger &logger,
-                ArucoTracker *arucoTracker);
+                ArucoTracker *arucoTracker,
+                double displayFpsLimit);
     ~DataCapture();
 
     bool start();
@@ -114,6 +116,7 @@ private:
         bool storageRunning{false};
         bool displayRunning{false};
         bool dropWarned{false};
+        std::chrono::steady_clock::time_point lastDisplay;
     };
 
     std::vector<std::unique_ptr<DeviceContext>> _devices;
@@ -129,6 +132,8 @@ private:
     Preview &_preview;
     Logger &_logger;
     ArucoTracker *_arucoTracker{nullptr};
+    double _displayFpsLimit{0.0};
+    std::chrono::steady_clock::duration _displayInterval{};
 
     void captureLoop(DeviceContext *ctx);
     void displayLoop(DeviceContext *ctx);

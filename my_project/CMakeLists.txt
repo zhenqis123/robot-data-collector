@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(DataCollectorApp VERSION 1.0 LANGUAGES CXX)
+project(DataCollectorApp VERSION 1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,6 +19,11 @@ include_directories(
 find_package(Qt5 COMPONENTS Widgets Core Network Multimedia MultimediaWidgets Concurrent REQUIRED)
 set(QT_LIBS Qt5::Widgets Qt5::Core Qt5::Network Qt5::Multimedia Qt5::MultimediaWidgets Qt5::Concurrent)
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0)
+
+find_package(HDF5 REQUIRED COMPONENTS C)
+
 find_path(REALSENSE2_INCLUDE_DIR librealsense2/rs.hpp
     PATHS /usr/include /usr/local/include
 )
@@ -33,6 +38,14 @@ find_package(Threads REQUIRED)
 
 set(PROJECT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${PROJECT_INCLUDE_DIR})
+
+# AprilTag (optional fiducial detector)
+set(APRILTAG_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/apriltag)
+if(NOT EXISTS ${APRILTAG_SOURCE_DIR}/CMakeLists.txt)
+    message(FATAL_ERROR "AprilTag source not found. Expected at ../third_party/apriltag")
+endif()
+set(BUILD_EXAMPLES OFF CACHE BOOL "Disable AprilTag examples" FORCE)
+add_subdirectory(${APRILTAG_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/apriltag)
 
 file(GLOB PROJECT_HEADERS CONFIGURE_DEPENDS
     ${PROJECT_INCLUDE_DIR}/*.h)
@@ -73,13 +86,19 @@ target_link_libraries(${PROJECT_NAME}
         ${QT_LIBS}
         ${OpenCV_LIBS}
         ${REALSENSE2_LIBRARY}
+        ${GST_LIBRARIES}
+        HDF5::HDF5
+        apriltag
         Threads::Threads
         rt  # POSIX shared memory and semaphores
 )
 target_include_directories(${PROJECT_NAME}
     PRIVATE
         ${REALSENSE2_INCLUDE_DIR}
+        ${APRILTAG_SOURCE_DIR}
+        ${GST_INCLUDE_DIRS}
 )
+target_compile_options(${PROJECT_NAME} PRIVATE ${GST_CFLAGS_OTHER})
 target_compile_definitions(${PROJECT_NAME} PRIVATE USE_PIPER_AUDIO=0)
 
 add_executable(rs_test src/test_realsense.cpp)

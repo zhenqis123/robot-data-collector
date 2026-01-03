@@ -73,5 +73,5 @@ CaptureMetadata NetworkDevice::captureMetadata() const
 
 std::unique_ptr<FrameWriter> NetworkDevice::makeWriter(const std::string &basePath, Logger &logger)
 {
-    return makePngWriter(_label, basePath, logger);
+    return makeGstHdf5Writer(_label, basePath, logger, _config.frameRate, _config.depth.chunkSize);
 }

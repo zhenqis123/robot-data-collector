@@ -1,0 +1,98 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_lego_01",
+    "name": "Lego setup",
+    "name_cn": "积木拼搭场景",
+    "description": "A table with two different colored Lego blocks",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "lego_block_red",
+        "category": "toy_block",
+        "state": {
+          "placement": "on_table",
+          "relative": "left side"
+        }
+      },
+      {
+        "object_id": "obj_2",
+        "name": "lego_block_blue",
+        "category": "toy_block",
+        "state": {
+          "placement": "on_table",
+          "relative": "right side"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_lego_assemble_cycle",
+    "name": "Assemble and disassemble Lego",
+    "name_cn": "组装与拆卸积木",
+    "description": "Connect two Lego blocks and then separate them",
+    "spoken_prompt": "Task: We will play with Lego blocks. The goal is to assemble the blocks and then take them apart.",
+    "spoken_prompt_cn": "任务描述：我们要进行积木操作。目标是将积木组装起来，然后再拆开。",
+    "subtasks": [
+      {
+        "id": "st_lego_flow",
+        "description": "Execute the assembly and disassembly sequence",
+        "spoken_prompt": "Subtask: Please assemble the blocks and then disassemble them.",
+        "spoken_prompt_cn": "子任务描述：请先把积木拼好，再把它拆开。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "lego_block_red",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_2",
+            "name": "lego_block_blue",
+            "role": "manipulated"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Assemble the Lego blocks together",
+            "spoken_prompt": "Step one: pick up the blocks and assemble them together tightly.",
+            "spoken_prompt_cn": "第一步：拿起积木，把它们拼在一起并压紧。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "lego_block_red",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_2",
+                "name": "lego_block_blue",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Disassemble the blocks and return them to the table",
+            "spoken_prompt": "Step two: pull the blocks apart and place them back on the table.",
+            "spoken_prompt_cn": "第二步：把积木拆开，并放回桌面上。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "lego_block_red",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_2",
+                "name": "lego_block_blue",
+                "role": "manipulated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Ensure the blocks are firmly connected in step 1; ensure they are fully separated in step 2."
+  }
+}

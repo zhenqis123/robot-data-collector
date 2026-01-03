@@ -1,0 +1,98 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_jigsaw_puzzle_01",
+    "name": "Jigsaw puzzle setup",
+    "name_cn": "拼图游戏场景",
+    "description": "A table with two matching jigsaw puzzle pieces scattered",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "puzzle_piece_left",
+        "category": "puzzle_piece",
+        "state": {
+          "placement": "on_table",
+          "relative": "left side, scattered"
+        }
+      },
+      {
+        "object_id": "obj_2",
+        "name": "puzzle_piece_right",
+        "category": "puzzle_piece",
+        "state": {
+          "placement": "on_table",
+          "relative": "right side, scattered"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_jigsaw_assemble_cycle",
+    "name": "Assemble and disassemble puzzle",
+    "name_cn": "拼图与拆解",
+    "description": "Connect puzzle pieces together and then separate them back to the table",
+    "spoken_prompt": "Task: We will play with a puzzle. The goal is to connect the pieces and then take them apart.",
+    "spoken_prompt_cn": "任务描述：我们要玩拼图。目标是将拼图碎片拼在一起，然后再拆开。",
+    "subtasks": [
+      {
+        "id": "st_puzzle_flow",
+        "description": "Execute the assembly and disassembly sequence",
+        "spoken_prompt": "Subtask: Please assemble the puzzle and then disassemble it.",
+        "spoken_prompt_cn": "子任务描述：请把拼图拼好，然后再拆开。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "puzzle_piece_left",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_2",
+            "name": "puzzle_piece_right",
+            "role": "manipulated"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Connect the puzzle pieces together",
+            "spoken_prompt": "Step one: pick up the pieces and fit them together securely.",
+            "spoken_prompt_cn": "第一步：拿起拼图碎片，把它们紧密地拼在一起。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "puzzle_piece_left",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_2",
+                "name": "puzzle_piece_right",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Separate the pieces and return them to original positions",
+            "spoken_prompt": "Step two: separate the pieces and place them back on the table.",
+            "spoken_prompt_cn": "第二步：把拼图拆开，分别放回桌面原位。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "puzzle_piece_left",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_2",
+                "name": "puzzle_piece_right",
+                "role": "manipulated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Ensure the pieces interlock correctly in step 1; place them flat on the table in step 2."
+  }
+}

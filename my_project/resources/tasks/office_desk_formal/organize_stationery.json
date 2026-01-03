@@ -1,0 +1,198 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "study_desk_stationery_01",
+    "name": "Stationery setup",
+    "name_cn": "文具整理场景",
+    "description": "A pencil holder containing a pen, a ruler, and an eraser",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "pen",
+        "category": "stationery",
+        "state": {
+          "placement": "inside_holder",
+          "relative": "standing or resting inside"
+        }
+      },
+      {
+        "object_id": "obj_2",
+        "name": "ruler",
+        "category": "stationery",
+        "state": {
+          "placement": "inside_holder",
+          "relative": "standing or resting inside"
+        }
+      },
+      {
+        "object_id": "obj_3",
+        "name": "eraser",
+        "category": "stationery",
+        "state": {
+          "placement": "inside_holder",
+          "relative": "resting inside/bottom"
+        }
+      },
+      {
+        "object_id": "obj_4",
+        "name": "pencil_holder",
+        "category": "container",
+        "state": {
+          "placement": "on_desk",
+          "relative": "top-left corner"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_organize_stationery_cycle",
+    "name": "Take out and return stationery",
+    "name_cn": "取出并放回文具",
+    "description": "Remove pen, ruler, and eraser from holder to desk, then return them",
+    "spoken_prompt": "Task: We will organize stationery. The goal is to take the pen, ruler, and eraser out of the holder, arrange them on the desk, and then put them back.",
+    "spoken_prompt_cn": "任务描述：我们要整理文具。目标是将笔、尺子和橡皮从笔筒里取出来摆好，然后再放回笔筒里。",
+    "subtasks": [
+      {
+        "id": "st_stationery_flow",
+        "description": "Execute the sequence of taking out and returning items",
+        "spoken_prompt": "Subtask: Please take the items out one by one and then put them back.",
+        "spoken_prompt_cn": "子任务描述：请逐个取出文具，然后再逐个放回。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "pen",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_2",
+            "name": "ruler",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_3",
+            "name": "eraser",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_4",
+            "name": "pencil_holder",
+            "role": "container"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Take the pen out and place it on the desk",
+            "spoken_prompt": "Step one: take the pen out of the holder and place it on the desk.",
+            "spoken_prompt_cn": "第一步：把笔从笔筒里拿出来，放在桌面上。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "pen",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_4",
+                "name": "pencil_holder",
+                "role": "source"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Take the ruler out and place it next to the pen",
+            "spoken_prompt": "Step two: take the ruler out and place it next to the pen.",
+            "spoken_prompt_cn": "第二步：把尺子拿出来，并排放在笔的旁边。",
+            "involved_objects": [
+              {
+                "object_id": "obj_2",
+                "name": "ruler",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_4",
+                "name": "pencil_holder",
+                "role": "source"
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "description": "Take the eraser out and place it next to the ruler",
+            "spoken_prompt": "Step three: take the eraser out and place it next to the ruler.",
+            "spoken_prompt_cn": "第三步：把橡皮拿出来，也摆在桌面上。",
+            "involved_objects": [
+              {
+                "object_id": "obj_3",
+                "name": "eraser",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_4",
+                "name": "pencil_holder",
+                "role": "source"
+              }
+            ]
+          },
+          {
+            "id": "s4",
+            "description": "Put the pen back into the holder",
+            "spoken_prompt": "Step four: put the pen back into the holder.",
+            "spoken_prompt_cn": "第四步：把笔放回笔筒。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "pen",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_4",
+                "name": "pencil_holder",
+                "role": "target"
+              }
+            ]
+          },
+          {
+            "id": "s5",
+            "description": "Put the ruler back into the holder",
+            "spoken_prompt": "Step five: put the ruler back into the holder.",
+            "spoken_prompt_cn": "第五步：把尺子放回笔筒。",
+            "involved_objects": [
+              {
+                "object_id": "obj_2",
+                "name": "ruler",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_4",
+                "name": "pencil_holder",
+                "role": "target"
+              }
+            ]
+          },
+          {
+            "id": "s6",
+            "description": "Put the eraser back into the holder",
+            "spoken_prompt": "Step six: put the eraser back into the holder.",
+            "spoken_prompt_cn": "第六步：把橡皮放回笔筒。",
+            "involved_objects": [
+              {
+                "object_id": "obj_3",
+                "name": "eraser",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_4",
+                "name": "pencil_holder",
+                "role": "target"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Ensure items are placed neatly on the desk before returning them; all items must end up inside the holder."
+  }
+}

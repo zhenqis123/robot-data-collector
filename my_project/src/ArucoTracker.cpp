@@ -2,10 +2,21 @@
 
 #include <QDir>
 
+#include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
 #include <filesystem>
+
+extern "C"
+{
+#include "apriltag.h"
+#include "tag36h11.h"
+#include "tagStandard41h12.h"
+}
+
+#include <opencv2/imgproc.hpp>
 
 using namespace cv;
 
@@ -29,17 +40,58 @@ Ptr<aruco::Dictionary> dictionaryFromString(const std::string &name)
     }
     return nullptr;
 }
+
+struct AprilFamilyHandle
+{
+    apriltag_family *family{nullptr};
+    void (*destroy)(apriltag_family *){nullptr};
+};
+
+std::string toLower(const std::string &value)
+{
+    std::string out = value;
+    std::transform(out.begin(), out.end(), out.begin(), [](unsigned char c) { return std::tolower(c); });
+    return out;
+}
+
+AprilFamilyHandle aprilFamilyFromString(const std::string &name)
+{
+    const auto lower = toLower(name);
+    if (lower == "tag36h11")
+        return {tag36h11_create(), tag36h11_destroy};
+    if (lower == "tagstandard41h12")
+        return {tagStandard41h12_create(), tagStandard41h12_destroy};
+    return {};
+}
 } // namespace
 
 ArucoTracker::ArucoTracker(const std::vector<ArucoTarget> &targets)
 {
     if (!targets.empty())
     {
-        _dictionary = dictionaryFromString(targets.front().dictionary);
-        if (_dictionary)
-            _markerIds = targets.front().markerIds;
+        const auto &target = targets.front();
+        _detectorType = target.type;
+        _markerIds = target.markerIds;
+        if (_detectorType == FiducialType::Aruco)
+        {
+            _dictionary = dictionaryFromString(target.dictionary);
+            _detectorLabel = target.dictionary.empty() ? "ArUco" : "ArUco (" + target.dictionary + ")";
+        }
+        else
+        {
+            auto fam = aprilFamilyFromString(target.dictionary);
+            _aprilFamily = fam.family;
+            _aprilFamilyDestroy = fam.destroy;
+            if (_aprilFamily)
+            {
+                _aprilDetector = apriltag_detector_create();
+                apriltag_detector_add_family(_aprilDetector, _aprilFamily);
+                _aprilDetector->nthreads = std::max(1u, std::thread::hardware_concurrency());
+                _detectorLabel = target.dictionary.empty() ? "AprilTag" : "AprilTag (" + target.dictionary + ")";
+            }
+        }
     }
-    if (_dictionary)
+    if (isAvailable())
         _thread = std::thread(&ArucoTracker::worker, this);
     else
         _running = false;
@@ -55,11 +107,103 @@ ArucoTracker::~ArucoTracker()
     _cv.notify_all();
     if (_thread.joinable())
         _thread.join();
+    destroyAprilTag();
+}
+
+std::vector<ArucoDetection> ArucoTracker::detectWithAruco(const Job &job)
+{
+    std::vector<ArucoDetection> detections;
+    if (!_dictionary)
+        return detections;
+
+    std::vector<int> ids;
+    std::vector<std::vector<cv::Point2f>> corners;
+    aruco::detectMarkers(job.image, _dictionary, corners, ids);
+
+    for (size_t i = 0; i < ids.size(); ++i)
+    {
+        if (!_markerIds.empty() &&
+            std::find(_markerIds.begin(), _markerIds.end(), ids[i]) == _markerIds.end())
+            continue;
+        ArucoDetection det;
+        det.cameraId = job.cameraId;
+        det.timestamp = job.timestamp;
+        det.deviceTimestampMs = job.deviceTimestampMs;
+        det.markerId = ids[i];
+        det.corners = corners[i];
+        detections.push_back(std::move(det));
+    }
+    return detections;
+}
+
+std::vector<ArucoDetection> ArucoTracker::detectWithAprilTag(const Job &job)
+{
+    std::vector<ArucoDetection> detections;
+    if (!_aprilDetector || !_aprilFamily)
+        return detections;
+
+    cv::Mat gray;
+    if (job.image.channels() == 3)
+        cv::cvtColor(job.image, gray, cv::COLOR_BGR2GRAY);
+    else if (job.image.channels() == 4)
+        cv::cvtColor(job.image, gray, cv::COLOR_BGRA2GRAY);
+    else
+        gray = job.image;
+
+    if (gray.empty())
+        return detections;
+
+    image_u8_t img_header{gray.cols, gray.rows, static_cast<int>(gray.step), gray.data};
+    zarray_t *detectionsRaw = apriltag_detector_detect(_aprilDetector, &img_header);
+    if (!detectionsRaw)
+        return detections;
+
+    for (int i = 0; i < zarray_size(detectionsRaw); ++i)
+    {
+        apriltag_detection_t *det = nullptr;
+        zarray_get(detectionsRaw, i, &det);
+        if (!det)
+            continue;
+
+        if (!_markerIds.empty() &&
+            std::find(_markerIds.begin(), _markerIds.end(), det->id) == _markerIds.end())
+            continue;
+
+        ArucoDetection out;
+        out.cameraId = job.cameraId;
+        out.timestamp = job.timestamp;
+        out.deviceTimestampMs = job.deviceTimestampMs;
+        out.markerId = det->id;
+        out.corners = {
+            cv::Point2f(static_cast<float>(det->p[0][0]), static_cast<float>(det->p[0][1])),
+            cv::Point2f(static_cast<float>(det->p[1][0]), static_cast<float>(det->p[1][1])),
+            cv::Point2f(static_cast<float>(det->p[2][0]), static_cast<float>(det->p[2][1])),
+            cv::Point2f(static_cast<float>(det->p[3][0]), static_cast<float>(det->p[3][1]))};
+        detections.push_back(std::move(out));
+    }
+
+    apriltag_detections_destroy(detectionsRaw);
+    return detections;
+}
+
+void ArucoTracker::destroyAprilTag()
+{
+    if (_aprilDetector && _aprilFamily)
+        apriltag_detector_remove_family(_aprilDetector, _aprilFamily);
+    if (_aprilDetector)
+    {
+        apriltag_detector_destroy(_aprilDetector);
+        _aprilDetector = nullptr;
+    }
+    if (_aprilFamily && _aprilFamilyDestroy)
+        _aprilFamilyDestroy(_aprilFamily);
+    _aprilFamily = nullptr;
+    _aprilFamilyDestroy = nullptr;
 }
 
 void ArucoTracker::startSession(const std::string &basePath)
 {
-    if (!_dictionary)
+    if (!isAvailable())
         return;
     std::lock_guard<std::mutex> lock(_mutex);
     _sessionPath = basePath + "/aruco";
@@ -81,7 +225,7 @@ void ArucoTracker::endSession()
 
 void ArucoTracker::submit(const FrameData &frame)
 {
-    if (!_dictionary)
+    if (!isAvailable())
         return;
     std::lock_guard<std::mutex> lock(_mutex);
     if (!_sessionActive)
@@ -111,24 +255,8 @@ void ArucoTracker::worker()
                 continue;
         }
 
-        std::vector<int> ids;
-        std::vector<std::vector<cv::Point2f>> corners;
-        aruco::detectMarkers(job.image, _dictionary, corners, ids);
-
-        std::vector<ArucoDetection> detections;
-        for (size_t i = 0; i < ids.size(); ++i)
-        {
-            if (!_markerIds.empty() &&
-                std::find(_markerIds.begin(), _markerIds.end(), ids[i]) == _markerIds.end())
-                continue;
-            ArucoDetection det;
-            det.cameraId = job.cameraId;
-            det.timestamp = job.timestamp;
-            det.deviceTimestampMs = job.deviceTimestampMs;
-            det.markerId = ids[i];
-            det.corners = corners[i];
-            detections.push_back(std::move(det));
-        }
+        std::vector<ArucoDetection> detections =
+            _detectorType == FiducialType::AprilTag ? detectWithAprilTag(job) : detectWithAruco(job);
         if (!detections.empty())
             writeDetections(job.cameraId, detections);
         {

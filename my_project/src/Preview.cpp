@@ -149,6 +149,7 @@ void Preview::showFrame(const FrameData &frame)
 
     auto &view = it->second;
     std::string arucoInfo;
+    const std::string detectorLabel = _arucoTracker ? _arucoTracker->detectorName() : "Markers";
 
     // Handle Text-Only Devices (VDGlove / Vive)
     if (view.isTextOnly && view.dataLabel) {
@@ -171,6 +172,53 @@ void Preview::showFrame(const FrameData &frame)
              QMetaObject::invokeMethod(view.dataLabel, [lbl=view.dataLabel, text=ss.str()]() {
                 lbl->setText(QString::fromStdString(text));
             });
+    if (view.colorLabel && !frame.image.empty())
+    {
+        const cv::Mat *source = &frame.image;
+        cv::Mat overlayMat;
+        if (_arucoTracker)
+        {
+            auto detections = _arucoTracker->getLatestDetections(frame.cameraId);
+            if (!detections.empty())
+            {
+                overlayMat = frame.image.clone();
+                std::vector<int> ids;
+                std::vector<std::vector<cv::Point2f>> corners;
+                for (const auto &det : detections)
+                {
+                    ids.push_back(det.markerId);
+                    corners.push_back(det.corners);
+                }
+
+                // Draw thicker borders and clear labels for visibility.
+                for (size_t i = 0; i < corners.size(); ++i)
+                {
+                    const auto &c = corners[i];
+                    if (c.size() == 4)
+                    {
+                        for (int k = 0; k < 4; ++k)
+                        {
+                            cv::line(overlayMat, c[k], c[(k + 1) % 4], cv::Scalar(0, 255, 0), 3);
+                        }
+                        cv::putText(overlayMat, std::to_string(ids[i]), c[0] + cv::Point2f(0, -6),
+                                    cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 0), 3);
+                        cv::putText(overlayMat, std::to_string(ids[i]), c[0] + cv::Point2f(0, -6),
+                                    cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 255, 0), 2);
+                    }
+                }
+                cv::aruco::drawDetectedMarkers(overlayMat, corners, ids, cv::Scalar(0, 255, 0));
+                source = &overlayMat;
+
+                std::ostringstream ss;
+                ss << detectorLabel << " " << detections.size() << " ids: ";
+                for (size_t i = 0; i < detections.size(); ++i)
+                {
+                    ss << detections[i].markerId;
+                    if (i + 1 < detections.size())
+                        ss << ",";
+                }
+                arucoInfo = ss.str();
+            }
         }
     }
     else {
@@ -237,7 +285,8 @@ void Preview::showFrame(const FrameData &frame)
 
     if (!arucoInfo.empty() && view.infoLabel)
     {
-        view.lastArucoText = "ArUco: " + arucoInfo;
+        // Append marker info to the FPS label for this device.
+        view.lastArucoText = detectorLabel + ": " + arucoInfo;
         renderInfo(view);
     }
     else

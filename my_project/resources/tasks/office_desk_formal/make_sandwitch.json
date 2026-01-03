@@ -1,0 +1,188 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "kitchen_sandwich_01",
+    "name": "Sandwich making setup",
+    "name_cn": "三明治制作场景",
+    "description": "A cutting board with bread slices, ham, and cheese ingredients scattered",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "bread_slice_base",
+        "category": "food",
+        "state": {
+          "placement": "on_board",
+          "relative": "center"
+        }
+      },
+      {
+        "object_id": "obj_2",
+        "name": "ham_slice",
+        "category": "food",
+        "state": {
+          "placement": "on_board",
+          "relative": "left side"
+        }
+      },
+      {
+        "object_id": "obj_3",
+        "name": "cheese_slice",
+        "category": "food",
+        "state": {
+          "placement": "on_board",
+          "relative": "right side"
+        }
+      },
+      {
+        "object_id": "obj_4",
+        "name": "bread_slice_top",
+        "category": "food",
+        "state": {
+          "placement": "on_board",
+          "relative": "top area"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_make_sandwich_cycle",
+    "name": "Assemble and disassemble sandwich",
+    "name_cn": "制作与拆解三明治",
+    "description": "Stack ingredients to make a sandwich and then disassemble it back to ingredients",
+    "spoken_prompt": "Task: We will make a sandwich. The goal is to stack the ingredients, and then separate them back to the board.",
+    "spoken_prompt_cn": "任务描述：我们要制作三明治。目标是将食材堆叠起来，然后再把它们分开，放回案板上。",
+    "subtasks": [
+      {
+        "id": "st_sandwich_flow",
+        "description": "Execute the assembly and disassembly sequence",
+        "spoken_prompt": "Subtask: Please build the sandwich and then take it apart.",
+        "spoken_prompt_cn": "子任务描述：请制作三明治，然后再拆开。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "bread_slice_base",
+            "role": "base"
+          },
+          {
+            "object_id": "obj_2",
+            "name": "ham_slice",
+            "role": "ingredient"
+          },
+          {
+            "object_id": "obj_3",
+            "name": "cheese_slice",
+            "role": "ingredient"
+          },
+          {
+            "object_id": "obj_4",
+            "name": "bread_slice_top",
+            "role": "ingredient"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Place the ham on the base bread",
+            "spoken_prompt": "Step one: pick up the ham slice and place it on the base bread.",
+            "spoken_prompt_cn": "第一步：拿起火腿片，把它平铺在面包底座上。",
+            "involved_objects": [
+              {
+                "object_id": "obj_2",
+                "name": "ham_slice",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_1",
+                "name": "bread_slice_base",
+                "role": "target_base"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Place the cheese on the ham",
+            "spoken_prompt": "Step two: pick up the cheese slice and place it on top of the ham.",
+            "spoken_prompt_cn": "第二步：拿起芝士片，把它叠在火腿上。",
+            "involved_objects": [
+              {
+                "object_id": "obj_3",
+                "name": "cheese_slice",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_2",
+                "name": "ham_slice",
+                "role": "target_base"
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "description": "Place the top bread to finish the sandwich",
+            "spoken_prompt": "Step three: place the top bread slice on the cheese to finish the sandwich.",
+            "spoken_prompt_cn": "第三步：把另一片面包盖在芝士上，完成三明治。",
+            "involved_objects": [
+              {
+                "object_id": "obj_4",
+                "name": "bread_slice_top",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_3",
+                "name": "cheese_slice",
+                "role": "target_base"
+              }
+            ]
+          },
+          {
+            "id": "s4",
+            "description": "Remove the top bread and return it",
+            "spoken_prompt": "Step four: take the top bread off and put it back on the board.",
+            "spoken_prompt_cn": "第四步：把顶层的面包拿下来，放回案板原位。",
+            "involved_objects": [
+              {
+                "object_id": "obj_4",
+                "name": "bread_slice_top",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s5",
+            "description": "Remove the cheese and return it",
+            "spoken_prompt": "Step five: take the cheese slice off and put it back on the board.",
+            "spoken_prompt_cn": "第五步：把芝士片拿下来，放回案板原位。",
+            "involved_objects": [
+              {
+                "object_id": "obj_3",
+                "name": "cheese_slice",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s6",
+            "description": "Remove the ham and return it",
+            "spoken_prompt": "Step six: take the ham slice off and put it back on the board.",
+            "spoken_prompt_cn": "第六步：把火腿片拿下来，放回案板原位。",
+            "involved_objects": [
+              {
+                "object_id": "obj_2",
+                "name": "ham_slice",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_1",
+                "name": "bread_slice_base",
+                "role": "reference"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Ingredients should be aligned when stacking; disassemble gently to avoid tearing the food."
+  }
+}

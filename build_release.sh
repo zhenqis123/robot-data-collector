@@ -16,7 +16,7 @@ cmake -S "$PROJECT_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_CXX_COMPILER=/usr/bin/g++
 
 echo "Building (Release)..."
-cmake --build "$BUILD_DIR" -j
+cmake --build "$BUILD_DIR" -j --target DataCollectorApp
 
 echo
 echo "Release build completed."

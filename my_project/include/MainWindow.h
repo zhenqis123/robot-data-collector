@@ -4,6 +4,9 @@
 #include <memory>
 #include <string>
 #include <optional>
+#include <cstdint>
+#include <unordered_map>
+#include <chrono>
 
 #include "Logger.h"
 #include "ConfigManager.h"
@@ -22,6 +25,12 @@
 #ifndef APP_LOG_DIR
 #define APP_LOG_DIR "./resources/logs"
 #endif
+
+enum class PromptLanguage
+{
+    English,
+    Chinese
+};
 
 class QLineEdit;
 class QPushButton;
@@ -50,12 +59,11 @@ private slots:
     void onStopRecording();
     void onPauseRecording();
     void onResumeRecording();
-    void onAdvanceStep();
-    void onErrorStep();
+    void onStartStep();
+    void onEndStep();
     void onSkipStep();
     void onRetryStep();
-    void onAbortTask();
-    void onBrowseSavePath();
+    void onMarkKeyframe();
     void onCameraSelectionChanged(int index);
     void onApplyCameraSettings();
     void onShowParticipantPrompt();
@@ -83,17 +91,17 @@ private:
     QPushButton *_stopCaptureButton{nullptr};
     QPushButton *_pauseButton{nullptr};
     QPushButton *_resumeButton{nullptr};
-    QPushButton *_advanceButton{nullptr};
-    QPushButton *_errorButton{nullptr};
+    QPushButton *_startStepButton{nullptr};
+    QPushButton *_endStepButton{nullptr};
     QPushButton *_skipButton{nullptr};
     QPushButton *_retryButton{nullptr};
     QPushButton *_abortButton{nullptr};
     QPushButton *_clearTacButton{nullptr};
+    QPushButton *_keyframeButton{nullptr};
     QComboBox *_modeSelect{nullptr};
     QPushButton *_applySettingsButton{nullptr};
     QLineEdit *_captureNameEdit{nullptr};
     QLineEdit *_subjectEdit{nullptr};
-    QLineEdit *_savePathEdit{nullptr};
     QComboBox *_cameraSelect{nullptr};
     QComboBox *_colorResCombo{nullptr};
     QComboBox *_colorFpsCombo{nullptr};
@@ -124,7 +132,6 @@ private:
     QPushButton *_vlmGenerateButton{nullptr};
     QComboBox *_vlmCameraSelect{nullptr};
     QPushButton *_viewTaskButton{nullptr};
-    QComboBox *_audioEngineSelect{nullptr};
     AudioPromptsConfig _audioConfig;
     
     // Aux Controls
@@ -196,11 +203,19 @@ private:
     void updateRecordingBanner();
     void positionRecordingLabel();
     void resizeEvent(QResizeEvent *event) override;
+    ::PromptLanguage promptLanguageFromConfig() const;
     void applyAudioConfigForLanguage();
     void updateVlmPromptMetadata();
 
-    enum class PromptLanguage { English, Chinese };
-    PromptLanguage _promptLanguage{PromptLanguage::Chinese};
-    QComboBox *_promptLanguageSelect{nullptr};
+    ::PromptLanguage _promptLanguage{::PromptLanguage::Chinese};
+    struct StepTiming
+    {
+        std::string subtaskId;
+        std::string stepId;
+        int64_t startMs{0};
+    };
+    std::optional<StepTiming> _activeStepTiming;
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point> _lastTrigger;
+    bool throttleTrigger(const std::string &action, int ms);
     bool useChinesePrompts() const;
 };

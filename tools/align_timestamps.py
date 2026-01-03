@@ -14,11 +14,15 @@ from __future__ import annotations
 import argparse
 import csv
 from dataclasses import dataclass
+import json
+import os
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from datetime import datetime, timezone
 import numpy as np
 
-TS_FIELDS = ["timestamp_iso", "timestamp_ms", "device_timestamp_ms", "color_path", "depth_path"]
+TS_FIELDS = ["timestamp_iso", "timestamp_ms", "device_timestamp_ms", "frame_index",
+             "color_path", "rgb_path", "depth_path"]
 
 
 @dataclass
@@ -26,6 +30,7 @@ class FrameRow:
     timestamp_iso: str
     timestamp_ms: int
     device_timestamp_ms: int
+    frame_index: Optional[int]
     color_path: str
     depth_path: str
 
@@ -38,13 +43,30 @@ def read_timestamps(csv_path: Path) -> List[FrameRow]:
         reader = csv.DictReader(f)
         for r in reader:
             try:
+                color_path = r.get("color_path", "")
+                rgb_path = r.get("rgb_path", "")
+                depth_path = r.get("depth_path", "")
+                if not color_path and rgb_path:
+                    color_path = rgb_path
+                frame_index = r.get("frame_index", "")
+                idx: Optional[int] = None
+                if frame_index:
+                    try:
+                        idx = int(frame_index)
+                    except ValueError:
+                        idx = None
+                if idx is None and color_path:
+                    stem = Path(color_path).stem
+                    if stem.isdigit():
+                        idx = int(stem)
                 rows.append(
                     FrameRow(
                         timestamp_iso=r.get("timestamp_iso", ""),
                         timestamp_ms=int(r.get("timestamp_ms", "0")),
                         device_timestamp_ms=int(r.get("device_timestamp_ms", "0")),
-                        color_path=r.get("color_path", ""),
-                        depth_path=r.get("depth_path", ""),
+                        frame_index=idx,
+                        color_path=color_path,
+                        depth_path=depth_path,
                     )
                 )
             except ValueError:
@@ -59,10 +81,38 @@ def closest_frame(target_ts: int, frames: List[FrameRow]) -> Tuple[Optional[Fram
     return best, abs(best.timestamp_ms - target_ts)
 
 
+def find_meta_files(root: Path, max_depth: int) -> List[Path]:
+    result: List[Path] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        depth = len(Path(dirpath).relative_to(root).parts)
+        if depth > max_depth:
+            dirnames[:] = []
+            continue
+        if "meta.json" in filenames:
+            result.append(Path(dirpath) / "meta.json")
+    return sorted(result)
+
+
+def list_meta_files(root: Path, find_meta: bool, max_depth: int) -> List[Path]:
+    if find_meta:
+        return find_meta_files(root, max_depth)
+    result: List[Path] = []
+    for child in sorted(root.iterdir()):
+        if not child.is_dir():
+            continue
+        meta = child / "meta.json"
+        if meta.exists():
+            result.append(meta)
+    return result
+
+
 def align_capture(capture_root: Path, reference: Optional[str]) -> None:
     meta_path = capture_root / "meta.json"
     if not meta_path.exists():
         print(f"[timestamps] skip {capture_root}, no meta.json")
+        return
+    if should_skip_step(capture_root, "align_timestamps"):
+        print(f"[timestamps] skip {capture_root}, already aligned")
         return
     with meta_path.open("r") as f:
         import json
@@ -79,7 +129,7 @@ def align_capture(capture_root: Path, reference: Optional[str]) -> None:
 
     cam_frames: Dict[str, List[FrameRow]] = {}
     for cid in cam_ids:
-        cid_path = Path(str(cid).replace("#", "_"))
+        cid_path = Path(sanitize_camera_id(str(cid)))
         ts_path = capture_root / cid_path / "timestamps.csv"
         cam_frames[cid] = read_timestamps(ts_path)
 
@@ -89,11 +139,19 @@ def align_capture(capture_root: Path, reference: Optional[str]) -> None:
         return
 
     # Prepare output header
-    header = ["ref_camera", "ref_timestamp_iso", "ref_timestamp_ms", "ref_device_timestamp_ms", "ref_color", "ref_depth"]
+    header = [
+        "ref_camera",
+        "ref_timestamp_iso",
+        "ref_timestamp_ms",
+        "ref_device_timestamp_ms",
+        "ref_frame_index",
+        "ref_color",
+        "ref_depth",
+    ]
     for cid in cam_ids:
         if cid == ref_id:
             continue
-        header.extend([f"{cid}_color", f"{cid}_depth", f"{cid}_delta_ms"])
+        header.extend([f"{cid}_frame_index", f"{cid}_color", f"{cid}_depth", f"{cid}_delta_ms"])
 
     out_path = capture_root / "frames_aligned.csv"
     with out_path.open("w", newline="") as f:
@@ -107,6 +165,7 @@ def align_capture(capture_root: Path, reference: Optional[str]) -> None:
                 fr.timestamp_iso,
                 fr.timestamp_ms,
                 fr.device_timestamp_ms,
+                fr.frame_index if fr.frame_index is not None else "",
                 fr.color_path,
                 fr.depth_path,
             ]
@@ -115,11 +174,18 @@ def align_capture(capture_root: Path, reference: Optional[str]) -> None:
                     continue
                 match, delta = closest_frame(fr.timestamp_ms, cam_frames.get(cid, []))
                 if match:
-                    row.extend([match.color_path, match.depth_path, delta if delta is not None else ""])
+                    row.extend(
+                        [
+                            match.frame_index if match.frame_index is not None else "",
+                            match.color_path,
+                            match.depth_path,
+                            delta if delta is not None else "",
+                        ]
+                    )
                     if delta is not None:
                         stats[cid].append(delta)
                 else:
-                    row.extend(["", "", ""])
+                    row.extend(["", "", "", ""])
             writer.writerow(row)
     # Print stats
     lines = [f"[timestamps] aligned frames written to {out_path}"]
@@ -132,14 +198,72 @@ def align_capture(capture_root: Path, reference: Optional[str]) -> None:
         else:
             lines.append(f"  {cid}: no matches")
     print("\n".join(lines))
+    update_marker(
+        capture_root,
+        "align_timestamps",
+        {
+            "reference_camera": ref_id,
+            "output": out_path.name,
+            "rows": len(ref_frames),
+        },
+    )
 
 
 def main():
     parser = argparse.ArgumentParser(description="Align frames across cameras by timestamp (nearest to reference).")
-    parser.add_argument("capture", help="Capture root containing meta.json")
+    parser.add_argument("root", help="Root directory containing capture folders or meta.json")
     parser.add_argument("--reference", help="Reference camera id (defaults to first in meta.json)", default=None)
+    parser.add_argument("--find-meta", type=str, default="true",
+                        choices=["true", "false"],
+                        help="Search meta.json recursively (true) or only root/*/meta.json (false)")
     args = parser.parse_args()
-    align_capture(Path(args.capture).expanduser().resolve(), args.reference)
+    root = Path(args.root).expanduser().resolve()
+    find_meta = args.find_meta.lower() == "true"
+    metas = list_meta_files(root, find_meta, 2)
+    if not metas:
+        print("No meta.json found")
+        return
+    for meta in metas:
+        align_capture(meta.parent, args.reference)
+
+
+def update_marker(capture_root: Path, step: str, info: Dict) -> None:
+    marker_path = capture_root / "postprocess_markers.json"
+    payload = {}
+    if marker_path.exists():
+        try:
+            payload = json.loads(marker_path.read_text())
+        except json.JSONDecodeError:
+            payload = {}
+    steps = payload.get("steps")
+    if not isinstance(steps, dict):
+        steps = {}
+    done_at = datetime.now(timezone.utc).isoformat()
+    entry = dict(info)
+    entry["done_at"] = done_at
+    steps[step] = entry
+    payload["steps"] = steps
+    payload["updated_at"] = done_at
+    marker_path.write_text(json.dumps(payload, indent=2))
+    print(f"[timestamps] updated marker {marker_path}")
+
+
+def sanitize_camera_id(cam_id: str) -> str:
+    return "".join(ch if (ch.isalnum() or ch in "-_") else "_" for ch in cam_id)
+
+
+def should_skip_step(capture_root: Path, step: str) -> bool:
+    marker_path = capture_root / "postprocess_markers.json"
+    if not marker_path.exists():
+        return False
+    try:
+        payload = json.loads(marker_path.read_text())
+    except json.JSONDecodeError:
+        return False
+    steps = payload.get("steps")
+    if not isinstance(steps, dict):
+        return False
+    return step in steps
 
 
 if __name__ == "__main__":

@@ -54,3 +54,12 @@ AGENTS.md
 !jay_promptvn.wav
 sess*/
 *.mp4
+aruco_print_out/
+print_out/
+sess*/
+my_project/resources/config.json
+data/
+vis/
+my_project/resources/config.json
+my_project/resources/task_backup
+TODO.md

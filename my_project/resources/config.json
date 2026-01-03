@@ -1,5 +1,7 @@
 {
   "tasks_path": "tasks",
+  "captures_path": "/home/xiziheng/develop/data_collector/my_project/resources/logs/captures",
+  "display_fps_limit": 15,
   "vlm": {
     "model": "qwen3-vl-plus",
     "endpoint": "https://api.probex.top/v1/chat/completions",
@@ -8,7 +10,9 @@
   },
   "audio_prompts": {
     "enabled": true,
-    "mode": "IndexTTS",
+    "mode": "index_tts",
+    "language": "chinese",
+    "keyframe_only": true,
     "volume": 100,
     "index_tts": {
       "endpoint": "http://192.168.20.173:6006/tts_url",
@@ -16,23 +20,27 @@
     },
     "texts": {
       "start": "录制开始。任务{task_id}，步骤{step_id}：{step_desc}。",
+      "step_start": "步骤开始。",
       "next_step": "下一步 {step_id}：{step_desc}。",
+      "step_end": "当前步骤完成。",
       "complete": "本轮任务已完成，返回开头继续。",
-      "abort": "任务已中止。",
-      "error": "记录异常。",
+      "pause": "录制已暂停。",
+      "resume": "录制已继续。",
       "skip": "已跳过当前步骤。",
       "retry": "正在重试当前步骤。",
+      "keyframe": "标记",
       "stop_running": "录制已停止，任务中断。",
       "stop_completed": "录制已停止，任务完成。",
       "vlm_success": "任务生成成功。",
       "vlm_fail": "任务生成失败，请重试。"
     },
     "keybindings": {
-      "advance": "S",
+      "step_start": "S",
+      "step_end": "D",
+      "pause_toggle": "P",
       "retry": "R",
       "skip": "K",
-      "error": "E",
-      "abort": "A"
+      "keyframe": "Space"
     }
   },
   "cameras": [
@@ -46,8 +54,9 @@
         "frame_rate": 30
       },
       "depth": {
-        "resolution": "640x480",
-        "frame_rate": 30
+        "resolution": "640X360",
+        "frame_rate": 30,
+        "chunk_size": 64
       }
     },
     {
@@ -69,8 +78,9 @@
   ],
   "aruco_targets": [
     {
-      "dictionary": "DICT_6X6_100",
-      "marker_ids": [0, 1, 2, 3]
+      "type": "apriltag",
+      "family": "tagStandard41h12",
+      "marker_ids": [0, 1, 2, 3,4,5,6]
     }
   ]
 }

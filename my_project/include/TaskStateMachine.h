@@ -61,8 +61,10 @@ public:
     Transition beginSession();
     // SubtaskReady -> Running
     Transition beginSubtask();
-    // Running -> (Running/SubtaskReady/Completed)
-    Transition advance();
+    // Handle start-step request based on current state
+    Transition startStep();
+    // Finish current step -> next step/subtask/completion
+    Transition finishStep();
     Transition abort();
     Transition stop(); // Completed/Aborted -> Ready
 
