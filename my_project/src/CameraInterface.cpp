@@ -66,12 +66,13 @@ public:
                       _model == "RealSense" ? cv::Scalar(20, 40, 200) : cv::Scalar(40, 200, 20));
         cv::putText(frame, _label, {20, 40}, cv::FONT_HERSHEY_SIMPLEX, 1.0, {255, 255, 255}, 2);
 
-        data.image = frame;
+        data.image = std::make_shared<cv::Mat>(frame);
         data.timestamp = std::chrono::system_clock::now();
         data.deviceTimestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                                      std::chrono::steady_clock::now().time_since_epoch())
                                      .count();
         data.cameraId = _label;
+        data.colorFormat = "BGR8";
 
         if (_config.frameRate > 0)
         {
@@ -92,9 +93,9 @@ public:
     std::vector<CameraConfig::StreamConfig> getAvailableResolutions() const override
     {
         return {
-            {640, 480, 30, 0, CameraConfig::StreamConfig::StreamType::Color},
-            {1280, 720, 30, 0, CameraConfig::StreamConfig::StreamType::Color},
-            {1920, 1080, 30, 0, CameraConfig::StreamConfig::StreamType::Color}
+            {640, 480, 30, 0, 8000, CameraConfig::StreamConfig::StreamType::Color},
+            {1280, 720, 30, 0, 8000, CameraConfig::StreamConfig::StreamType::Color},
+            {1920, 1080, 30, 0, 8000, CameraConfig::StreamConfig::StreamType::Color}
         };
     }
 
@@ -146,7 +147,7 @@ public:
                 _rsConfig.enable_device(config.serial);
                 _logger.info("Binding RealSense to serial %s", config.serial.c_str());
             }
-            _rsConfig.enable_stream(RS2_STREAM_COLOR, colorWidth, colorHeight, RS2_FORMAT_BGR8, colorFps);
+            _rsConfig.enable_stream(RS2_STREAM_COLOR, colorWidth, colorHeight, RS2_FORMAT_YUYV, colorFps);
             _rsConfig.enable_stream(RS2_STREAM_DEPTH, depthWidth, depthHeight, RS2_FORMAT_Z16, depthFps);
             auto profile = _pipeline.start(_rsConfig);
             _device = profile.get_device();
@@ -224,7 +225,7 @@ public:
             _metadata.depthScale = _depthScale;
             _metadata.colorFps = colorFps;
             _metadata.depthFps = depthFps;
-            _metadata.colorFormat = "BGR8";
+            _metadata.colorFormat = "YUYV";
             _metadata.depthFormat = "Z16";
             auto colorIntr = colorProfile.get_intrinsics();
             _metadata.colorIntrinsics.stream = "color";
@@ -277,16 +278,17 @@ public:
                 return data;
             }
 
-            cv::Mat colorMat(cv::Size(color.get_width(), color.get_height()), CV_8UC3,
+            cv::Mat colorMat(cv::Size(color.get_width(), color.get_height()), CV_8UC2,
                              const_cast<void *>(color.get_data()), cv::Mat::AUTO_STEP);
             cv::Mat depthMat(cv::Size(depth.get_width(), depth.get_height()), CV_16U,
                              const_cast<void *>(depth.get_data()), cv::Mat::AUTO_STEP);
 
-            data.image = colorMat.clone();
-            data.depth = depthMat.clone();
+            data.image = std::make_shared<cv::Mat>(colorMat.clone());
+            data.depth = std::make_shared<cv::Mat>(depthMat.clone());
             data.timestamp = std::chrono::system_clock::now();
             data.deviceTimestampMs = static_cast<int64_t>(color.get_timestamp());
             data.cameraId = _identifier;
+            data.colorFormat = "YUYV";
         }
         catch (const rs2::error &e)
         {
@@ -450,12 +452,13 @@ public:
             _logger.warn("Webcam %s read failed", _label.c_str());
             return data;
         }
-        data.image = frame.clone();
+        data.image = std::make_shared<cv::Mat>(frame.clone());
         data.timestamp = std::chrono::system_clock::now();
         data.deviceTimestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                                      std::chrono::steady_clock::now().time_since_epoch())
                                      .count();
         data.cameraId = _label;
+        data.colorFormat = "BGR8";
         return data;
     }
 
@@ -474,7 +477,8 @@ public:
                                  basePath,
                                  logger,
                                  ensurePositive(_config.color.frameRate, ensurePositive(_config.frameRate, 30)),
-                                 _config.depth.chunkSize);
+                                 _config.depth.chunkSize,
+                                 _config.color.bitrateKbps);
     }
 
     CaptureMetadata captureMetadata() const override
@@ -507,12 +511,14 @@ public:
                        const std::string &basePath,
                        Logger &logger,
                        int colorFps,
-                       int depthChunkSize)
+                       int depthChunkSize,
+                       int colorBitrateKbps)
         : _deviceId(deviceId),
           _basePath(basePath),
           _logger(logger),
           _colorFps(colorFps > 0 ? colorFps : 30),
-          _depthChunkSize(depthChunkSize > 0 ? depthChunkSize : 0)
+          _depthChunkSize(depthChunkSize > 0 ? depthChunkSize : 0),
+          _colorBitrateKbps(colorBitrateKbps > 0 ? colorBitrateKbps : 8000)
     {
         const auto sanitized = sanitize(_deviceId);
         _cameraDir = std::filesystem::path(_basePath) / sanitized;
@@ -535,17 +541,24 @@ public:
         closeStreams();
     }
 
+    void setWriteCallback(std::function<void()> callback) override
+    {
+        std::lock_guard<std::mutex> lock(_callbackMutex);
+        _writeCallback = std::move(callback);
+    }
+
     bool write(const FrameData &frame) override
     {
-        if (frame.image.empty() || _basePath.empty())
+        if (!frame.hasImage() || _basePath.empty())
             return false;
 
         FrameData copy;
-        copy.image = frame.image.clone();
-        copy.depth = frame.depth.clone();
+        copy.image = frame.image;
+        copy.depth = frame.depth;
         copy.timestamp = frame.timestamp;
         copy.deviceTimestampMs = frame.deviceTimestampMs;
         copy.cameraId = frame.cameraId;
+        copy.colorFormat = frame.colorFormat;
 
         {
             std::lock_guard<std::mutex> lock(_mutex);
@@ -571,8 +584,29 @@ private:
             }
 
             const uint64_t idx = ++_frameIndex;
+            const auto t0 = std::chrono::steady_clock::now();
             const bool rgbOk = writeRgb(frame);
+            const auto t1 = std::chrono::steady_clock::now();
             const bool depthOk = writeDepth(frame);
+            const auto t2 = std::chrono::steady_clock::now();
+
+            _perfRgbMs += std::chrono::duration<double, std::milli>(t1 - t0).count();
+            _perfDepthMs += std::chrono::duration<double, std::milli>(t2 - t1).count();
+            _perfTotalMs += std::chrono::duration<double, std::milli>(t2 - t0).count();
+            ++_perfCount;
+            if (_perfCount % _perfLogEvery == 0)
+            {
+                const double denom = static_cast<double>(_perfLogEvery);
+                _logger.info("Writer perf %s: avg total %.2f ms (rgb %.2f ms, depth %.2f ms) over %llu frames",
+                             _deviceId.c_str(),
+                             _perfTotalMs / denom,
+                             _perfRgbMs / denom,
+                             _perfDepthMs / denom,
+                             static_cast<unsigned long long>(_perfLogEvery));
+                _perfRgbMs = 0.0;
+                _perfDepthMs = 0.0;
+                _perfTotalMs = 0.0;
+            }
             if (!rgbOk && !depthOk)
             {
                 _logger.error("Failed to store frame for %s", _deviceId.c_str());
@@ -595,19 +629,38 @@ private:
                 }
                 _tsStream << idx << "," << iso << "," << tsMs << "," << frame.deviceTimestampMs << ","
                           << "rgb.mkv"
-                          << "," << (frame.depth.empty() ? "" : "depth.h5") << "\n";
+                          << "," << (frame.hasDepth() ? "depth.h5" : "") << "\n";
+                ++_timestampLineCount;
+                if (_timestampLineCount % _timestampFlushEvery == 0)
+                    _tsStream.flush();
             }
+            std::function<void()> callback;
+            {
+                std::lock_guard<std::mutex> lock(_callbackMutex);
+                callback = _writeCallback;
+            }
+            if (callback)
+                callback();
         }
     }
 
     bool writeRgb(const FrameData &frame)
     {
-        if (frame.image.empty())
+        if (!frame.hasImage())
             return false;
-        if (!_gstReady && !initGst(frame.image.cols, frame.image.rows))
+        if (_inputGstFormat.empty())
+        {
+            if (frame.colorFormat == "YUYV")
+                _inputGstFormat = "YUY2";
+            else if (frame.colorFormat.empty() && frame.imageRef().channels() == 2)
+                _inputGstFormat = "YUY2";
+            else
+                _inputGstFormat = "BGR";
+        }
+        if (!_gstReady && !initGst(frame.imageRef().cols, frame.imageRef().rows))
             return false;
 
-        cv::Mat image = frame.image;
+        cv::Mat image = frame.imageRef();
         if (!image.isContinuous())
             image = image.clone();
 
@@ -651,12 +704,12 @@ private:
 
     bool writeDepth(const FrameData &frame)
     {
-        if (frame.depth.empty())
+        if (!frame.hasDepth())
             return false;
-        if (!_hdf5Ready && !initHdf5(frame.depth.cols, frame.depth.rows))
+        if (!_hdf5Ready && !initHdf5(frame.depthRef().cols, frame.depthRef().rows))
             return false;
 
-        cv::Mat depthMat = frame.depth;
+        cv::Mat depthMat = frame.depthRef();
         if (depthMat.type() != CV_16U)
         {
             if (!_depthTypeWarned)
@@ -670,8 +723,16 @@ private:
         const hsize_t newDims[3] = {static_cast<hsize_t>(_depthIndex + 1),
                                     static_cast<hsize_t>(_depthHeight),
                                     static_cast<hsize_t>(_depthWidth)};
-        if (H5Dset_extent(_h5Dataset, newDims) < 0)
-            return false;
+        if (_depthIndex >= _depthAllocSize)
+        {
+            const uint64_t target = _depthAllocSize + _depthExtendStep;
+            const hsize_t extendDims[3] = {static_cast<hsize_t>(target),
+                                           static_cast<hsize_t>(_depthHeight),
+                                           static_cast<hsize_t>(_depthWidth)};
+            if (H5Dset_extent(_h5Dataset, extendDims) < 0)
+                return false;
+            _depthAllocSize = target;
+        }
 
         hid_t filespace = H5Dget_space(_h5Dataset);
         if (filespace < 0)
@@ -695,9 +756,11 @@ private:
         return true;
     }
 
-    GstElement *makeEncoder() const
+    GstElement *makeEncoder()
     {
         const std::vector<const char *> candidates = {
+            "vaapih264enc",
+            "nvh264enc",
             "x264enc",
             "openh264enc",
             "avenc_h264"
@@ -705,7 +768,12 @@ private:
         for (const auto *name : candidates)
         {
             if (gst_element_factory_find(name))
+            {
+                _encoderName = name;
+                _useHwEncoder = (_encoderName == "vaapih264enc" || _encoderName == "nvh264enc");
+                _logger.info("Selected encoder for %s: %s", _deviceId.c_str(), _encoderName.c_str());
                 return gst_element_factory_make(name, "encoder");
+            }
         }
         return nullptr;
     }
@@ -726,14 +794,21 @@ private:
         GstElement *mux = gst_element_factory_make("matroskamux", "mux");
         _filesink = gst_element_factory_make("filesink", "sink");
 
-        if (!_appsrc || !convert || !encoder || !parse || !mux || !_filesink)
+        GstElement *capsfilter = nullptr;
+        if (_useHwEncoder)
+        {
+            capsfilter = gst_element_factory_make("capsfilter", "capsfilter");
+        }
+
+        if (!_appsrc || !convert || !encoder || !parse || !mux || !_filesink ||
+            (_useHwEncoder && !capsfilter))
         {
             if (!_appsrc)
                 _logger.error("Missing GStreamer element appsrc for %s", _deviceId.c_str());
             if (!convert)
                 _logger.error("Missing GStreamer element videoconvert for %s", _deviceId.c_str());
             if (!encoder)
-                _logger.error("Missing GStreamer element encoder (x264enc/openh264enc/avenc_h264) for %s",
+                _logger.error("Missing GStreamer element encoder (vaapih264enc/nvh264enc/x264enc/openh264enc/avenc_h264) for %s",
                               _deviceId.c_str());
             if (!parse)
                 _logger.error("Missing GStreamer element h264parse for %s", _deviceId.c_str());
@@ -741,19 +816,28 @@ private:
                 _logger.error("Missing GStreamer element matroskamux for %s", _deviceId.c_str());
             if (!_filesink)
                 _logger.error("Missing GStreamer element filesink for %s", _deviceId.c_str());
+            if (_useHwEncoder && !capsfilter)
+                _logger.error("Missing GStreamer element capsfilter for %s", _deviceId.c_str());
             closeGst();
             return false;
         }
 
         g_object_set(G_OBJECT(_filesink), "location", _rgbPath.string().c_str(), nullptr);
-        g_object_set(G_OBJECT(encoder),
-                     "tune", "zerolatency",
-                     "speed-preset", "ultrafast",
-                     "bitrate", 8000,
-                     nullptr);
+        if (_encoderName == "x264enc")
+        {
+            g_object_set(G_OBJECT(encoder),
+                         "tune", "zerolatency",
+                         "speed-preset", "fast",
+                         "bitrate", _colorBitrateKbps,
+                         nullptr);
+        }
+        else
+        {
+            g_object_set(G_OBJECT(encoder), "bitrate", _colorBitrateKbps, nullptr);
+        }
 
         GstCaps *caps = gst_caps_new_simple("video/x-raw",
-                                            "format", G_TYPE_STRING, "BGR",
+                                            "format", G_TYPE_STRING, _inputGstFormat.c_str(),
                                             "width", G_TYPE_INT, width,
                                             "height", G_TYPE_INT, height,
                                             "framerate", GST_TYPE_FRACTION, _colorFps, 1,
@@ -766,12 +850,31 @@ private:
                      "format", GST_FORMAT_TIME,
                      nullptr);
 
-        gst_bin_add_many(GST_BIN(_pipeline), _appsrc, convert, encoder, parse, mux, _filesink, nullptr);
-        if (!gst_element_link_many(_appsrc, convert, encoder, parse, mux, _filesink, nullptr))
+        if (_useHwEncoder)
         {
-            _logger.error("Failed to link GStreamer pipeline for %s", _deviceId.c_str());
-            closeGst();
-            return false;
+            GstCaps *hwCaps = gst_caps_new_simple("video/x-raw",
+                                                  "format", G_TYPE_STRING, "NV12",
+                                                  nullptr);
+            g_object_set(G_OBJECT(capsfilter), "caps", hwCaps, nullptr);
+            gst_caps_unref(hwCaps);
+
+            gst_bin_add_many(GST_BIN(_pipeline), _appsrc, convert, capsfilter, encoder, parse, mux, _filesink, nullptr);
+            if (!gst_element_link_many(_appsrc, convert, capsfilter, encoder, parse, mux, _filesink, nullptr))
+            {
+                _logger.error("Failed to link GStreamer pipeline for %s", _deviceId.c_str());
+                closeGst();
+                return false;
+            }
+        }
+        else
+        {
+            gst_bin_add_many(GST_BIN(_pipeline), _appsrc, convert, encoder, parse, mux, _filesink, nullptr);
+            if (!gst_element_link_many(_appsrc, convert, encoder, parse, mux, _filesink, nullptr))
+            {
+                _logger.error("Failed to link GStreamer pipeline for %s", _deviceId.c_str());
+                closeGst();
+                return false;
+            }
         }
 
         const GstStateChangeReturn stateRet = gst_element_set_state(_pipeline, GST_STATE_PLAYING);
@@ -804,11 +907,14 @@ private:
         }
 
         hid_t props = H5Pcreate(H5P_DATASET_CREATE);
-        const int chunkSize = _depthChunkSize > 0 ? _depthChunkSize : 1;
+        int chunkSize = _depthChunkSize > 0 ? _depthChunkSize : 1;
+        chunkSize = std::min(chunkSize, 8);
         hsize_t chunkDims[3] = {static_cast<hsize_t>(chunkSize),
                                 static_cast<hsize_t>(height),
                                 static_cast<hsize_t>(width)};
         H5Pset_chunk(props, 3, chunkDims);
+        H5Pset_shuffle(props);
+        H5Pset_deflate(props, 1);
 
         _h5Dataset = H5Dcreate2(_h5File, "/depth", H5T_NATIVE_UINT16, dataspace, H5P_DEFAULT, props, H5P_DEFAULT);
         H5Pclose(props);
@@ -819,6 +925,7 @@ private:
             closeHdf5();
             return false;
         }
+        _depthAllocSize = 0;
         _hdf5Ready = true;
         return true;
     }
@@ -863,6 +970,13 @@ private:
     {
         if (_h5Dataset >= 0)
         {
+            if (_depthIndex > 0)
+            {
+                const hsize_t finalDims[3] = {static_cast<hsize_t>(_depthIndex),
+                                              static_cast<hsize_t>(_depthHeight),
+                                              static_cast<hsize_t>(_depthWidth)};
+                H5Dset_extent(_h5Dataset, finalDims);
+            }
             H5Dclose(_h5Dataset);
             _h5Dataset = H5I_INVALID_HID;
         }
@@ -907,6 +1021,7 @@ private:
     uint64_t _frameIndex{0};
     std::mutex _tsMutex;
     std::mutex _mutex;
+    std::mutex _callbackMutex;
     std::condition_variable _cv;
     std::queue<FrameData> _queue;
     bool _stopped{false};
@@ -916,11 +1031,15 @@ private:
     std::filesystem::path _depthPath;
     int _colorFps{30};
     int _depthChunkSize{0};
+    int _colorBitrateKbps{8000};
     bool _gstReady{false};
     bool _hdf5Ready{false};
     bool _ptsInitialized{false};
     bool _depthTypeWarned{false};
     std::chrono::system_clock::time_point _firstTimestamp;
+    std::string _encoderName;
+    std::string _inputGstFormat;
+    bool _useHwEncoder{false};
     GstElement *_pipeline{nullptr};
     GstElement *_appsrc{nullptr};
     GstElement *_filesink{nullptr};
@@ -929,22 +1048,33 @@ private:
     int _depthWidth{0};
     int _depthHeight{0};
     uint64_t _depthIndex{0};
+    uint64_t _depthAllocSize{0};
+    static constexpr uint64_t _depthExtendStep = 100;
+    static constexpr uint64_t _perfLogEvery = 100;
+    uint64_t _perfCount{0};
+    double _perfRgbMs{0.0};
+    double _perfDepthMs{0.0};
+    double _perfTotalMs{0.0};
+    std::function<void()> _writeCallback;
+    uint64_t _timestampLineCount{0};
+    static constexpr uint64_t _timestampFlushEvery = 30;
 };
 
 std::unique_ptr<FrameWriter> makePngWriter(const std::string &deviceId,
                                            const std::string &basePath,
                                            Logger &logger)
 {
-    return std::make_unique<GstHdf5FrameWriter>(deviceId, basePath, logger, 30, 0);
+    return std::make_unique<GstHdf5FrameWriter>(deviceId, basePath, logger, 30, 0, 8000);
 }
 
 std::unique_ptr<FrameWriter> makeGstHdf5Writer(const std::string &deviceId,
                                                const std::string &basePath,
                                                Logger &logger,
                                                int colorFps,
-                                               int depthChunkSize)
+                                               int depthChunkSize,
+                                               int colorBitrateKbps)
 {
-    return std::make_unique<GstHdf5FrameWriter>(deviceId, basePath, logger, colorFps, depthChunkSize);
+    return std::make_unique<GstHdf5FrameWriter>(deviceId, basePath, logger, colorFps, depthChunkSize, colorBitrateKbps);
 }
 
 std::unique_ptr<CameraInterface> createCamera(const CameraConfig &config, Logger &logger)
@@ -967,7 +1097,8 @@ std::unique_ptr<FrameWriter> SimulatedCamera::makeWriter(const std::string &base
                              basePath,
                              logger,
                              ensurePositive(_config.color.frameRate, ensurePositive(_config.frameRate, 30)),
-                             _config.depth.chunkSize);
+                             _config.depth.chunkSize,
+                             _config.color.bitrateKbps);
 }
 
 CaptureMetadata SimulatedCamera::captureMetadata() const
@@ -990,7 +1121,8 @@ std::unique_ptr<FrameWriter> RealSenseCamera::makeWriter(const std::string &base
                              basePath,
                              logger,
                              ensurePositive(_config.color.frameRate, ensurePositive(_config.frameRate, 30)),
-                             _config.depth.chunkSize);
+                             _config.depth.chunkSize,
+                             _config.color.bitrateKbps);
 }
 
 CaptureMetadata RealSenseCamera::captureMetadata() const

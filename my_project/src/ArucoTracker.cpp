@@ -234,7 +234,14 @@ void ArucoTracker::submit(const FrameData &frame)
     job.cameraId = frame.cameraId;
     job.timestamp = frame.timestamp;
     job.deviceTimestampMs = frame.deviceTimestampMs;
-    job.image = frame.image.clone();
+    if (frame.colorFormat == "YUYV")
+    {
+        cv::cvtColor(frame.imageRef(), job.image, cv::COLOR_YUV2BGR_YUY2);
+    }
+    else
+    {
+        job.image = frame.image ? frame.image->clone() : cv::Mat();
+    }
     _queue.push(std::move(job));
     _cv.notify_one();
 }

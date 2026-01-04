@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <functional>
 #include <memory>
 #include <string>
 #include <opencv2/core.hpp>
@@ -13,11 +14,17 @@ class Logger;
 
 struct FrameData
 {
-    cv::Mat image;
-    cv::Mat depth;
+    std::shared_ptr<cv::Mat> image;
+    std::shared_ptr<cv::Mat> depth;
     std::chrono::system_clock::time_point timestamp;
     int64_t deviceTimestampMs{0};
     std::string cameraId;
+    std::string colorFormat;
+
+    bool hasImage() const { return image && !image->empty(); }
+    bool hasDepth() const { return depth && !depth->empty(); }
+    const cv::Mat &imageRef() const { return *image; }
+    const cv::Mat &depthRef() const { return *depth; }
 };
 struct ArucoDetection
 {
@@ -54,6 +61,7 @@ struct FrameWriter
 {
     virtual ~FrameWriter() = default;
     virtual bool write(const FrameData &frame) = 0;
+    virtual void setWriteCallback(std::function<void()> callback) { (void)callback; }
 };
 
 std::unique_ptr<FrameWriter> makePngWriter(const std::string &deviceId,
@@ -63,7 +71,8 @@ std::unique_ptr<FrameWriter> makeGstHdf5Writer(const std::string &deviceId,
                                                const std::string &basePath,
                                                Logger &logger,
                                                int colorFps,
-                                               int depthChunkSize);
+                                               int depthChunkSize,
+                                               int colorBitrateKbps);
 
 class CameraInterface
 {

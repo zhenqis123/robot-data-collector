@@ -36,12 +36,13 @@ FrameData NetworkDevice::captureFrame()
     cv::putText(frame, _label, {20, 40}, cv::FONT_HERSHEY_SIMPLEX, 1.0, {200, 200, 200}, 2);
     if (!_config.endpoint.empty())
         cv::putText(frame, _config.endpoint, {20, 80}, cv::FONT_HERSHEY_SIMPLEX, 0.6, {150, 200, 150}, 2);
-    data.image = frame;
+    data.image = std::make_shared<cv::Mat>(frame);
     data.timestamp = std::chrono::system_clock::now();
     data.deviceTimestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                                  std::chrono::steady_clock::now().time_since_epoch())
                                  .count();
     data.cameraId = _label;
+    data.colorFormat = "BGR8";
     if (_config.frameRate > 0)
         std::this_thread::sleep_for(std::chrono::milliseconds(1000 / _config.frameRate));
     return data;
@@ -73,5 +74,10 @@ CaptureMetadata NetworkDevice::captureMetadata() const
 
 std::unique_ptr<FrameWriter> NetworkDevice::makeWriter(const std::string &basePath, Logger &logger)
 {
-    return makeGstHdf5Writer(_label, basePath, logger, _config.frameRate, _config.depth.chunkSize);
+    return makeGstHdf5Writer(_label,
+                             basePath,
+                             logger,
+                             _config.frameRate,
+                             _config.depth.chunkSize,
+                             _config.color.bitrateKbps);
 }

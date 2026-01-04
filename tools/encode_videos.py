@@ -15,7 +15,7 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -358,7 +358,6 @@ def auto_process(root: Path, fps: float, output_name: str) -> None:
         except Exception as exc:
             print(f"[videos] skip {cid}: {exc}")
     if encoded:
-        annotate_video_positions(root, fps)
         update_marker(
             root,
             "encode_videos",
@@ -427,93 +426,6 @@ def nearest_frame_index(timestamps: List[float], ts_ms: float) -> Optional[int]:
     return idx - 1 if (ts_ms - before) <= (after - ts_ms) else idx
 
 
-def update_jsonl_with_video_position(
-    path: Path,
-    timestamps: List[float],
-    fps: float,
-    ts_getter: Callable[[Dict], Optional[float]],
-) -> None:
-    if not path.exists():
-        return
-    updated = 0
-    rows: List[Dict] = []
-    with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                rows.append({"_raw": line})
-                continue
-            ts = ts_getter(obj)
-            if ts is not None:
-                idx = nearest_frame_index(timestamps, ts)
-                if idx is not None:
-                    obj["video_frame_index"] = idx
-                    if timestamps:
-                        obj["video_time_s"] = (ts - timestamps[0]) / 1000.0
-                    else:
-                        obj["video_time_s"] = idx / fps
-                    updated += 1
-            rows.append(obj)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        for obj in rows:
-            if "_raw" in obj:
-                f.write(obj["_raw"] + "\n")
-            else:
-                f.write(json.dumps(obj, ensure_ascii=False) + "\n")
-    tmp.replace(path)
-    print(f"[videos] updated {updated} entries with video positions in {path.name}")
-
-
-def update_camera_poses_with_video_position(path: Path, fps: float, timestamps: List[float]) -> None:
-    if not path.exists():
-        return
-    data = json.loads(path.read_text())
-    poses = data.get("poses", [])
-    updated = 0
-    for pose in poses:
-        frame_index = pose.get("frame_index")
-        if isinstance(frame_index, (int, float)):
-            frame_idx = int(frame_index)
-            pose["video_frame_index"] = frame_idx
-            if timestamps and 0 <= frame_idx < len(timestamps):
-                pose["video_time_s"] = (timestamps[frame_idx] - timestamps[0]) / 1000.0
-            else:
-                pose["video_time_s"] = frame_idx / fps
-            updated += 1
-    data["poses"] = poses
-    path.write_text(json.dumps(data, indent=2))
-    print(f"[videos] updated {updated} pose entries with video_time_s in {path.name}")
-
-
-def annotate_video_positions(root: Path, fps: float) -> None:
-    timestamps, ref_cam = load_ref_timestamps(root)
-    if not timestamps:
-        print(f"[videos] skip video position update, no timestamps for {root}")
-        return
-    events_path = root / "events.jsonl"
-    annotations_path = root / "annotations.jsonl"
-    poses_path = root / "camera_poses_apriltag.json"
-
-    update_jsonl_with_video_position(
-        events_path,
-        timestamps,
-        fps,
-        lambda obj: obj.get("ts_ms") if isinstance(obj.get("ts_ms"), (int, float)) else None,
-    )
-    update_jsonl_with_video_position(
-        annotations_path,
-        timestamps,
-        fps,
-        lambda obj: obj.get("timestamp_ms")
-        if isinstance(obj.get("timestamp_ms"), (int, float))
-        else None,
-    )
-    update_camera_poses_with_video_position(poses_path, fps, timestamps)
 
 
 def update_marker(capture_root: Path, step: str, info: Dict) -> None:

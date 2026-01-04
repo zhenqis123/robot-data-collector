@@ -42,6 +42,7 @@
 #include <nlohmann/json.hpp>
 #include <cstdlib>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 #include <unordered_map>
 
 using json = nlohmann::json;
@@ -636,14 +637,23 @@ void MainWindow::onGenerateVlmTask()
 
     // Grab latest frame from preview if available
     std::optional<FrameData> latestFrame = _preview.latestFrame(cameraId);
-    if (!latestFrame.has_value() || latestFrame->image.empty())
+    if (!latestFrame.has_value() || !latestFrame->hasImage())
     {
         QMessageBox::warning(this, tr("VLM"), tr("所选相机没有可用画面 / No frame available for selected camera."));
         return;
     }
     // Save a temp image to pass to generator
     std::filesystem::path tempImg = std::filesystem::path(APP_LOG_DIR) / "vlm_input.png";
-    cv::imwrite(tempImg.string(), latestFrame->image);
+    if (latestFrame->colorFormat == "YUYV")
+    {
+        cv::Mat bgr;
+        cv::cvtColor(latestFrame->imageRef(), bgr, cv::COLOR_YUV2BGR_YUY2);
+        cv::imwrite(tempImg.string(), bgr);
+    }
+    else
+    {
+        cv::imwrite(tempImg.string(), latestFrame->imageRef());
+    }
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
     auto generated = generateTaskFromVlm(tempImg.string());

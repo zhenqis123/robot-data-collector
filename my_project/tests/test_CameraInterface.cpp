@@ -28,6 +28,6 @@ TEST(CameraInterfaceTest, SimulatedCameraProducesFrames)
     ASSERT_TRUE(camera->initialize(config));
     FrameData frame = camera->captureFrame();
     camera->close();
-    EXPECT_FALSE(frame.image.empty());
+    EXPECT_TRUE(frame.hasImage());
     EXPECT_FALSE(frame.cameraId.empty());
 }

@@ -128,16 +128,22 @@ void Preview::showFrame(const FrameData &frame)
     std::string arucoInfo;
     const std::string detectorLabel = _arucoTracker ? _arucoTracker->detectorName() : "Markers";
 
-    if (view.colorLabel && !frame.image.empty())
+    if (view.colorLabel && frame.hasImage())
     {
-        const cv::Mat *source = &frame.image;
+        cv::Mat converted;
+        const cv::Mat *source = &frame.imageRef();
+        if (frame.colorFormat == "YUYV")
+        {
+            cv::cvtColor(frame.imageRef(), converted, cv::COLOR_YUV2BGR_YUY2);
+            source = &converted;
+        }
         cv::Mat overlayMat;
         if (_arucoTracker)
         {
             auto detections = _arucoTracker->getLatestDetections(frame.cameraId);
             if (!detections.empty())
             {
-                overlayMat = frame.image.clone();
+                overlayMat = source->clone();
                 std::vector<int> ids;
                 std::vector<std::vector<cv::Point2f>> corners;
                 for (const auto &det : detections)
@@ -180,9 +186,9 @@ void Preview::showFrame(const FrameData &frame)
         dispatchToLabel(view.colorLabel, image);
     }
 
-    if (view.showDepth && view.depthLabel && !frame.depth.empty())
+    if (view.showDepth && view.depthLabel && frame.hasDepth())
     {
-        auto image = depthToQImage(frame.depth);
+        auto image = depthToQImage(frame.depthRef());
         dispatchToLabel(view.depthLabel, image);
     }
 

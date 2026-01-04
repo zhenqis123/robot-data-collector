@@ -72,6 +72,15 @@ bool DataCapture::start()
         ctx->storageRunning = true;
         ctx->displayRunning = true;
         ctx->writer = ctx->device ? ctx->device->makeWriter(_storage.basePath(), _logger) : nullptr;
+        if (ctx->writer && ctx->device && ctx->stats)
+        {
+            auto stats = ctx->stats;
+            auto cameraId = ctx->device->name();
+            ctx->writer->setWriteCallback([this, stats, cameraId]() {
+                if (auto fps = stats->recordWrite())
+                    _preview.updateCameraStats(cameraId, *fps);
+            });
+        }
         ctx->captureThread = std::thread(&DataCapture::captureLoop, this, ctx);
         ctx->displayThread = std::thread(&DataCapture::displayLoop, this, ctx);
         ctx->storageThread = std::thread(&DataCapture::storageLoop, this, ctx);
@@ -129,7 +138,7 @@ void DataCapture::captureLoop(DeviceContext *ctx)
     while (_running.load())
     {
         FrameData frame = ctx->device->captureFrame();
-        if (frame.image.empty())
+        if (!frame.hasImage())
             continue;
         frame.cameraId = ctx->device->name();
         auto stats = ctx->stats;
@@ -168,6 +177,15 @@ void DataCapture::startRecording(const std::string &captureName,
     {
         if (ctxPtr->device)
             ctxPtr->writer = ctxPtr->device->makeWriter(_storage.basePath(), _logger);
+        if (ctxPtr->writer && ctxPtr->device && ctxPtr->stats)
+        {
+            auto stats = ctxPtr->stats;
+            auto cameraId = ctxPtr->device->name();
+            ctxPtr->writer->setWriteCallback([this, stats, cameraId]() {
+                if (auto fps = stats->recordWrite())
+                    _preview.updateCameraStats(cameraId, *fps);
+            });
+        }
     }
     _recording = true;
     _paused = false;
@@ -273,11 +291,7 @@ void DataCapture::storageLoop(DeviceContext *ctx)
             ctx->storageQueue.pop();
         }
 
-        const bool writeOk = (ctx->writer && ctx->writer->write(item.frame));
-        if (writeOk && item.stats)
-        {
-            if (auto fps = item.stats->recordWrite())
-                _preview.updateCameraStats(item.frame.cameraId, *fps);
-        }
+        if (ctx->writer)
+            ctx->writer->write(item.frame);
     }
 }

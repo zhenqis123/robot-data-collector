@@ -84,6 +84,8 @@ bool ConfigManager::load(const std::string &path)
                     stream.frameRate = streamObj.value("frame_rate").toInt(stream.frameRate);
                 if (streamObj.contains("chunk_size"))
                     stream.chunkSize = streamObj.value("chunk_size").toInt(0);
+                if (streamObj.contains("bitrate_kbps"))
+                    stream.bitrateKbps = streamObj.value("bitrate_kbps").toInt(stream.bitrateKbps);
             }
             return stream;
         };
