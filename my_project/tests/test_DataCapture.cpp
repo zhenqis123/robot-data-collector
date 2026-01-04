@@ -42,7 +42,7 @@ TEST(DataCaptureTest, StartsAndStopsThreads)
     std::vector<DeviceSpec> devices;
     devices.push_back(std::move(spec));
 
-    DataCapture capture(std::move(devices), storage, preview, logger, nullptr);
+    DataCapture capture(std::move(devices), storage, preview, logger, nullptr, 0.0);
     EXPECT_FALSE(capture.isRunning());
     EXPECT_TRUE(capture.start());
     std::this_thread::sleep_for(std::chrono::milliseconds(100));

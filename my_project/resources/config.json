@@ -49,13 +49,14 @@
       "id": 0,
       "align_depth": false,
       "color": {
-        "resolution": "640X360",
-        "frame_rate": 30
+        "resolution": "1280X720",
+        "frame_rate": 30,
+        "bitrate_kbps": 12000
       },
       "depth": {
-        "resolution": "640X360",
+        "resolution": "1280X720",
         "frame_rate": 30,
-        "chunk_size": 64
+        "chunk_size": 8
       }
     }
   ],

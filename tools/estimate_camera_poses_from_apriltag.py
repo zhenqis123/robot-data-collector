@@ -58,6 +58,8 @@ class PoseResult:
     used_tag_ids: Optional[List[int]] = None
     num_tags: int = 0
     T_W_C: Optional[np.ndarray] = None
+    rvec_c_w: Optional[np.ndarray] = None
+    tvec_c_w: Optional[np.ndarray] = None
     rvec_w_c: Optional[np.ndarray] = None
     tvec_w_c: Optional[np.ndarray] = None
     quat_wxyz: Optional[np.ndarray] = None
@@ -244,6 +246,9 @@ def build_correspondences(
     img_points: List[np.ndarray] = []
     used_ids: List[int] = []
     scaled_obj = OBJECT_POINTS * tag_length
+    scaled_obj = scaled_obj.copy()
+    scaled_obj[:, 1] *= -1.0
+    scaled_obj[:, 2] *= -1.0
     for det in detections:
         mid = int(det.tag_id)
         T_W_M = tag_poses.get(mid)
@@ -272,24 +277,53 @@ def solve_camera_pose(
     pnp_reproj: float,
     pnp_iterations: int,
     pnp_confidence: float,
+    use_ransac: bool,
+    pnp_flag: int,
+    initial_rvec: Optional[np.ndarray] = None,
+    initial_tvec: Optional[np.ndarray] = None,
 ) -> PoseResult:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     detections = detector.detect(gray)
-    obj_points, img_points, used_ids = build_correspondences(detections, tag_length, tag_poses)
+    obj_points, img_points, used_ids = build_correspondences(
+        detections,
+        tag_length,
+        tag_poses,
+    )
     if obj_points is None or img_points is None:
         return PoseResult(status="error", error="no_tags", used_tag_ids=used_ids, num_tags=len(used_ids))
     if obj_points.shape[0] < 4:
         return PoseResult(status="error", error="insufficient_points", used_tag_ids=used_ids, num_tags=len(used_ids))
-    success, rvec, tvec, inliers = cv2.solvePnPRansac(
-        obj_points,
-        img_points,
-        K,
-        dist,
-        flags=cv2.SOLVEPNP_ITERATIVE,
-        reprojectionError=pnp_reproj,
-        iterationsCount=pnp_iterations,
-        confidence=pnp_confidence,
-    )
+    success = False
+    rvec = None
+    tvec = None
+    inliers = None
+    use_guess = initial_rvec is not None and initial_tvec is not None
+    if use_ransac:
+        success, rvec, tvec, inliers = cv2.solvePnPRansac(
+            obj_points,
+            img_points,
+            K,
+            dist,
+            flags=pnp_flag,
+            reprojectionError=pnp_reproj,
+            iterationsCount=pnp_iterations,
+            confidence=pnp_confidence,
+            useExtrinsicGuess=use_guess,
+            rvec=initial_rvec,
+            tvec=initial_tvec,
+        )
+    if not success:
+        success, rvec, tvec = cv2.solvePnP(
+            obj_points,
+            img_points,
+            K,
+            dist,
+            flags=pnp_flag,
+            useExtrinsicGuess=use_guess,
+            rvec=initial_rvec,
+            tvec=initial_tvec,
+        )
+        inliers = None
     if not success or rvec is None or tvec is None:
         return PoseResult(status="error", error="pnp_failed", used_tag_ids=used_ids, num_tags=len(used_ids))
     proj, _ = cv2.projectPoints(obj_points, rvec, tvec, K, dist)
@@ -314,6 +348,8 @@ def solve_camera_pose(
         used_tag_ids=used_ids,
         num_tags=len(used_ids),
         T_W_C=T_w_c,
+        rvec_c_w=rvec.flatten(),
+        tvec_c_w=tvec.flatten(),
         rvec_w_c=rotation_matrix_to_rvec(R_w_c),
         tvec_w_c=t_w_c,
         quat_wxyz=rotation_matrix_to_quaternion(R_w_c),
@@ -341,6 +377,8 @@ def process_capture(
     pnp_reproj: float,
     pnp_iterations: int,
     pnp_confidence: float,
+    use_ransac: bool,
+    pnp_flag: int,
     progress: Progress,
     console: Console,
     capture_index: int,
@@ -379,6 +417,7 @@ def process_capture(
     err_count = 0
     video_caps: Dict[str, cv2.VideoCapture] = {}
     video_paths: Dict[str, Path] = {}
+    last_guess: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
 
     with frames_csv.open("r", newline="") as f:
         reader = csv.DictReader(f)
@@ -488,6 +527,9 @@ def process_capture(
                     progress.advance(task_id)
                     continue
                 K, dist = intrinsics[cid]
+                initial = last_guess.get(cid)
+                initial_rvec = initial[0] if initial is not None else None
+                initial_tvec = initial[1] if initial is not None else None
                 result = solve_camera_pose(
                     image,
                     K,
@@ -498,6 +540,10 @@ def process_capture(
                     pnp_reproj,
                     pnp_iterations,
                     pnp_confidence,
+                    use_ransac,
+                    pnp_flag,
+                    initial_rvec=initial_rvec,
+                    initial_tvec=initial_tvec,
                 )
                 if result.status != "ok":
                     entry.update(
@@ -525,6 +571,8 @@ def process_capture(
                     }
                 )
                 output["poses"].append(entry)
+                if result.rvec_c_w is not None and result.tvec_c_w is not None:
+                    last_guess[cid] = (result.rvec_c_w, result.tvec_c_w)
                 ok_count += 1
                 progress.advance(task_id)
 
@@ -566,9 +614,16 @@ def main() -> int:
     parser.add_argument("--threads", type=int, default=0, help="Detector threads (0 = hardware concurrency)")
     parser.add_argument("--decimate", type=float, default=1.0, help="quad_decimate for speed/accuracy tradeoff")
     parser.add_argument("--sigma", type=float, default=0.0, help="quad_sigma (Gaussian blur) for robustness")
-    parser.add_argument("--pnp-reproj", type=float, default=5.0, help="PnP RANSAC reprojection error (px)")
-    parser.add_argument("--pnp-iterations", type=int, default=100, help="PnP RANSAC iterations")
+    parser.add_argument("--pnp-reproj", type=float, default=2, help="PnP RANSAC reprojection error (px)")
+    parser.add_argument("--pnp-iterations", type=int, default=1000, help="PnP RANSAC iterations")
     parser.add_argument("--pnp-confidence", type=float, default=0.99, help="PnP RANSAC confidence")
+    parser.add_argument(
+        "--pnp-method",
+        default="iterative",
+        choices=["iterative", "ippe", "ippe_square"],
+        help="PnP method (ippe_* for planar tags)",
+    )
+    parser.add_argument("--no-ransac", action="store_true", help="Disable PnP RANSAC stage")
     args = parser.parse_args()
 
     tag_map_path = args.tag_map.expanduser().resolve()
@@ -596,6 +651,12 @@ def main() -> int:
         quad_sigma=args.sigma,
         refine_edges=True,
     )
+    pnp_flags = {
+        "iterative": cv2.SOLVEPNP_ITERATIVE,
+        "ippe": cv2.SOLVEPNP_IPPE,
+        "ippe_square": cv2.SOLVEPNP_IPPE_SQUARE,
+    }
+    pnp_flag = pnp_flags[args.pnp_method]
 
     console = Console()
     progress = Progress(
@@ -607,6 +668,7 @@ def main() -> int:
         console=console,
     )
     any_written = False
+    any_processed = False
     with progress:
         for idx, meta in enumerate(metas, start=1):
             capture_root = meta.parent
@@ -621,15 +683,18 @@ def main() -> int:
                 args.pnp_reproj,
                 args.pnp_iterations,
                 args.pnp_confidence,
+                not args.no_ransac,
+                pnp_flag,
                 progress,
                 console,
                 idx,
                 len(metas),
             )
+            any_processed = True
             any_written = any_written or wrote
-    if not any_written:
-        return 1
-    return 0
+    if any_processed and not any_written:
+        return 0
+    return 0 if any_written else 1
 
 
 def should_skip_step(capture_root: Path, step: str) -> bool:
