@@ -63,7 +63,11 @@ TODO.md
 data_new/
 outputs/
 tracking_results/
-third_party/
+# 1. 忽略 third_party 文件夹下的所有内容
+third_party/*
+
+# 2. 但是不要忽略 apriltag 目录
+!third_party/apriltag/
 rsync.sh
 zip.sh
 test_opencv.sh

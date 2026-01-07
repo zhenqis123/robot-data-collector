@@ -54,6 +54,8 @@ sudo apt install librealsense2-utils librealsense2-dev librealsense2-dbg
 # HDF5(保存depth数据)
 sudo apt install -y libhdf5-dev hdf5-tools
 
+
+sudo apt install libgtest-dev
 sudo apt install \
     libgstreamer1.0-dev \
     libgstreamer-plugins-base1.0-dev \
