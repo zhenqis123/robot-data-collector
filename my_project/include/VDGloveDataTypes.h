@@ -1,8 +1,12 @@
 #pragma once
-#include <vector>
+
 #include <array>
-#include <Eigen/Dense>
 #include <chrono>
+#include <vector>
+
+#include <Eigen/Dense>
+
+#include "ConfigManager.h"
 
 // 定义常量 (来自 vdmocapsdk_nodelist.py)
 constexpr int LENGTH_BODY = 23;

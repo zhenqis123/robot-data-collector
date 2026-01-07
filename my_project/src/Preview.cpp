@@ -1,5 +1,9 @@
 #include "Preview.h"
 
+#include <iomanip>
+#include <memory>
+#include <sstream>
+
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -7,11 +11,6 @@
 #include <QMetaObject>
 #include <QPixmap>
 #include <QVBoxLayout>
-
-#include <iomanip>
-#include <memory>
-#include <sstream>
-
 #include <opencv2/aruco.hpp>
 #include <opencv2/imgproc.hpp>
 
@@ -24,7 +23,10 @@ std::unique_ptr<QLabel> makeDisplayLabel()
 {
     auto label = std::make_unique<QLabel>();
     label->setMinimumSize(320, 180);
-    label->setStyleSheet("background-color: #222; color: #fff; border: 1px solid #444;");
+    label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    label->setStyleSheet(
+        "background-color: #222; color: #fff; border: 1px solid #444;"
+    );
     label->setAlignment(Qt::AlignCenter);
     label->setText("Waiting...");
     return label;
@@ -34,7 +36,9 @@ std::unique_ptr<QLabel> makeTextDataLabel()
 {
     auto label = std::make_unique<QLabel>();
     label->setMinimumSize(320, 40);
-    label->setStyleSheet("background-color: #111; color: #0f0; border: 1px solid #333; font-family: Monospace;");
+    label->setStyleSheet(
+        "background-color: #111; color: #0f0; border: 1px solid #333; font-family: Monospace;"
+    );
     label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     label->setText("Waiting for data...");
     return label;
@@ -54,6 +58,11 @@ void Preview::setStatusLabel(QLabel *label)
 void Preview::setDevicesLayout(QVBoxLayout *layout)
 {
     _devicesLayout = layout;
+}
+
+void Preview::setShowDepthPreview(bool enabled)
+{
+    _showDepthPreview = enabled;
 }
 
 void Preview::registerCameraView(const std::string &cameraId, const std::string &type)
@@ -86,7 +95,7 @@ void Preview::registerCameraView(const std::string &cameraId, const std::string 
         streamLayout->addWidget(colorContainer, 1);
 
         QLabel *depthLabelRaw = nullptr;
-        bool showDepth = (type == "RealSense");
+        bool showDepth = (type == "RealSense") && _showDepthPreview;
         if (showDepth)
         {
             auto depthLabel = makeDisplayLabel();
@@ -106,7 +115,9 @@ void Preview::registerCameraView(const std::string &cameraId, const std::string 
     }
 
     auto infoLabel = new QLabel("Capture: 0.0 fps | Display: 0.0 fps | Write: 0.0 fps");
-    infoLabel->setStyleSheet("color: #f0f0f0; background-color: rgba(0,0,0,0.5); font-size: 12px; padding: 2px 6px;");
+    infoLabel->setStyleSheet(
+        "color: #f0f0f0; background-color: rgba(0,0,0,0.5); font-size: 12px; padding: 2px 6px;"
+    );
     infoLabel->setAlignment(Qt::AlignLeft);
     boxLayout->addWidget(infoLabel, 0, Qt::AlignBottom | Qt::AlignLeft);
     _devicesLayout->addWidget(group);
@@ -340,6 +351,7 @@ void Preview::dispatchToLabel(QLabel *label, const QImage &image)
     if (!label)
         return;
     QMetaObject::invokeMethod(label, [label, image]() {
-        label->setPixmap(QPixmap::fromImage(image).scaled(label->size(), Qt::KeepAspectRatio));
+        const QSize target = label->size().isEmpty() ? label->minimumSize() : label->size();
+        label->setPixmap(QPixmap::fromImage(image).scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation));
     });
 }

@@ -21,6 +21,8 @@ struct FrameData
 {
     cv::Mat image;
     cv::Mat depth;
+    std::shared_ptr<void> imageOwner;
+    std::shared_ptr<void> depthOwner;
     std::chrono::system_clock::time_point timestamp;
     int64_t deviceTimestampMs{0};
     std::string cameraId;

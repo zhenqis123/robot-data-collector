@@ -1,7 +1,8 @@
 #include "NetworkDevice.h"
 
-#include <opencv2/imgproc.hpp>
 #include <thread>
+
+#include <opencv2/imgproc.hpp>
 
 #include "Logger.h"
 

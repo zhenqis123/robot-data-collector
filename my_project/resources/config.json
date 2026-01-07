@@ -1,7 +1,8 @@
 {
   "tasks_path": "tasks",
   "captures_path": "/home/xiziheng/develop/data_collector/my_project/resources/logs/captures",
-  "display_fps_limit": 15,
+  "display_fps_limit": 5,
+  "show_depth_preview": false,
   "vlm": {
     "model": "qwen3-vl-plus",
     "endpoint": "https://api.probex.top/v1/chat/completions",
@@ -47,16 +48,15 @@
     {
       "type": "RealSense",
       "id": 0,
-      "serial": "017322074878", 
       "align_depth": false,
       "color": {
-        "resolution": "640x480",
+        "resolution": "640x360",
         "frame_rate": 30
       },
       "depth": {
-        "resolution": "640X360",
+        "resolution": "640x360",
         "frame_rate": 30,
-        "chunk_size": 64
+        "chunk_size": 8
       }
     },
     {

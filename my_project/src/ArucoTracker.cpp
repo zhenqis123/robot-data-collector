@@ -1,13 +1,13 @@
 #include "ArucoTracker.h"
 
-#include <QDir>
-
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
-#include <filesystem>
+
+#include <QDir>
 
 extern "C"
 {

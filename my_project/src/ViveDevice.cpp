@@ -1,13 +1,14 @@
-#include "ViveInterface.h"
-#include <thread>
-#include <mutex>
-#include <condition_variable>
 #include <atomic>
-#include <iostream>
+#include <condition_variable>
 #include <cstring>
-#include <fstream>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
+#include <iostream>
+#include <mutex>
+#include <thread>
+
+#include "ViveInterface.h"
 
 // Linux Socket
 #include <sys/types.h>
@@ -217,8 +218,8 @@ private:
         
         // 简单判断有效性：如果所有数据都是0，认为无效
         bool all_zeros = true;
-        for(int i=0; i<12; ++i) {
-            if(std::abs(raw_data[i]) > 1e-6) {
+        for (int i=0; i<12; ++i) {
+            if (std::abs(raw_data[i]) > 1e-6) {
                 all_zeros = false;
                 break;
             }

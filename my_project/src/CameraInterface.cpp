@@ -1,9 +1,9 @@
 #include "CameraInterface.h"
 
 #include <algorithm>
-#include <cstring>
 #include <cctype>
 #include <condition_variable>
+#include <cstring>
 #include <filesystem>
 #include <iomanip>
 #include <memory>
@@ -285,13 +285,17 @@ public:
                 return data;
             }
 
-            cv::Mat colorMat(cv::Size(color.get_width(), color.get_height()), CV_8UC2,
-                             const_cast<void *>(color.get_data()), cv::Mat::AUTO_STEP);
-            cv::Mat depthMat(cv::Size(depth.get_width(), depth.get_height()), CV_16U,
-                             const_cast<void *>(depth.get_data()), cv::Mat::AUTO_STEP);
+            auto colorHolder = std::make_shared<rs2::video_frame>(color);
+            auto depthHolder = std::make_shared<rs2::depth_frame>(depth);
+            cv::Mat colorMat(cv::Size(colorHolder->get_width(), colorHolder->get_height()), CV_8UC2,
+                             const_cast<void *>(colorHolder->get_data()), cv::Mat::AUTO_STEP);
+            cv::Mat depthMat(cv::Size(depthHolder->get_width(), depthHolder->get_height()), CV_16U,
+                             const_cast<void *>(depthHolder->get_data()), cv::Mat::AUTO_STEP);
 
-            data.image = colorMat.clone();
-            data.depth = depthMat.clone();
+            data.image = colorMat;
+            data.depth = depthMat;
+            data.imageOwner = colorHolder;
+            data.depthOwner = depthHolder;
             data.timestamp = std::chrono::system_clock::now();
             data.deviceTimestampMs = static_cast<int64_t>(color.get_timestamp());
             data.cameraId = _identifier;
@@ -459,7 +463,7 @@ public:
             _logger.warn("Webcam %s read failed", _label.c_str());
             return data;
         }
-        data.image = frame.clone();
+        data.image = frame;
         data.timestamp = std::chrono::system_clock::now();
         data.deviceTimestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                                      std::chrono::steady_clock::now().time_since_epoch())
@@ -562,6 +566,8 @@ public:
         FrameData copy;
         copy.image = frame.image;
         copy.depth = frame.depth;
+        copy.imageOwner = frame.imageOwner;
+        copy.depthOwner = frame.depthOwner;
         copy.timestamp = frame.timestamp;
         copy.deviceTimestampMs = frame.deviceTimestampMs;
         copy.cameraId = frame.cameraId;
@@ -668,22 +674,40 @@ private:
             return false;
 
         cv::Mat image = frame.imageRef();
-        if (!image.isContinuous())
-            image = image.clone();
-
         const size_t bufferSize = image.total() * image.elemSize();
-        GstBuffer *buffer = gst_buffer_new_allocate(nullptr, bufferSize, nullptr);
-        if (!buffer)
-            return false;
+        GstBuffer *buffer = nullptr;
 
-        GstMapInfo map;
-        if (!gst_buffer_map(buffer, &map, GST_MAP_WRITE))
+        if (frame.imageOwner && image.isContinuous())
         {
-            gst_buffer_unref(buffer);
-            return false;
+            auto holder = new std::shared_ptr<void>(frame.imageOwner);
+            buffer = gst_buffer_new_wrapped_full(GST_MEMORY_FLAG_READONLY,
+                                                 const_cast<unsigned char *>(image.data),
+                                                 bufferSize,
+                                                 0,
+                                                 bufferSize,
+                                                 holder,
+                                                 [](gpointer data) {
+                                                     delete static_cast<std::shared_ptr<void> *>(data);
+                                                 });
         }
-        std::memcpy(map.data, image.data, bufferSize);
-        gst_buffer_unmap(buffer, &map);
+        else
+        {
+            if (!image.isContinuous())
+                image = image.clone();
+
+            buffer = gst_buffer_new_allocate(nullptr, bufferSize, nullptr);
+            if (!buffer)
+                return false;
+
+            GstMapInfo map;
+            if (!gst_buffer_map(buffer, &map, GST_MAP_WRITE))
+            {
+                gst_buffer_unref(buffer);
+                return false;
+            }
+            std::memcpy(map.data, image.data, bufferSize);
+            gst_buffer_unmap(buffer, &map);
+        }
 
         if (!_ptsInitialized)
         {

@@ -203,6 +203,23 @@
             "identifier": "RealSense#151322070562",
             "stream": "depth",
             "width": 640
+        },
+        {
+            "coeffs": [
+                0,
+                0,
+                0,
+                0,
+                0
+            ],
+            "cx": 313.12677001953125,
+            "cy": 241.48489379882812,
+            "fx": 606.5564575195312,
+            "fy": 605.2216796875,
+            "height": 480,
+            "identifier": "RealSense#213222079798",
+            "stream": "color",
+            "width": 640
         }
     ]
 }

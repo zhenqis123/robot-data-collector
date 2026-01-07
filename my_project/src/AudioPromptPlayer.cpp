@@ -1,25 +1,25 @@
 #include "AudioPromptPlayer.h"
 
-#include <QByteArray>
-#include <QThreadPool>
-#include <QtConcurrentRun>
-#include <QMediaPlayer>
-#include <QUrl>
-#include <QFile>
-#include <QDir>
-#include <QDateTime>
-#include <QNetworkAccessManager>
-#include <QNetworkRequest>
-#include <QNetworkReply>
-#include <QEventLoop>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonArray>
-
 #include <algorithm>
 #include <cstring>
 #include <mutex>
 #include <vector>
+
+#include <QByteArray>
+#include <QDateTime>
+#include <QDir>
+#include <QEventLoop>
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMediaPlayer>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QThreadPool>
+#include <QUrl>
+#include <QtConcurrentRun>
 
 #include "Logger.h"
 

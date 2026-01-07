@@ -1,51 +1,51 @@
 #include "MainWindow.h"
-#include "TacGlove.h"
 
+#include <algorithm>
+#include <cctype>
+#include <chrono>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <set>
+#include <unordered_map>
+
+#include <QApplication>
+#include <QCheckBox>
 #include <QComboBox>
+#include <QEventLoop>
+#include <QFile>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
-#include <QPushButton>
-#include <QScrollArea>
-#include <QVBoxLayout>
-#include <QWidget>
-#include <QSize>
-#include <QKeyEvent>
+#include <QMediaPlayer>
 #include <QMessageBox>
-#include <QTextEdit>
-#include <QThread>
-#include <QApplication>
-#include <QObject>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
-#include <QEventLoop>
+#include <QObject>
+#include <QPushButton>
+#include <QScrollArea>
+#include <QSize>
+#include <QTextEdit>
+#include <QThread>
 #include <QUrl>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonArray>
-#include <QMediaPlayer>
+#include <QVBoxLayout>
 #include <QVideoWidget>
-#include <QUrl>
-#include <QFileInfo>
-#include <QFile>
-#include <QCheckBox>
-
-#include <algorithm>
-#include <set>
-#include <filesystem>
-#include <fstream>
-#include <chrono>
-#include <cctype>
+#include <QWidget>
 #include <librealsense2/rs.hpp>
 #include <nlohmann/json.hpp>
-#include <cstdlib>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
-#include <unordered_map>
+
+#include "TacGlove.h"
 
 using json = nlohmann::json;
 
@@ -55,7 +55,9 @@ std::unique_ptr<QLabel> makeDisplayLabel()
 {
     auto label = std::make_unique<QLabel>();
     label->setMinimumSize(320, 180);
-    label->setStyleSheet("background-color: #222; color: #fff; border: 1px solid #444;");
+    label->setStyleSheet(
+        "background-color: #222; color: #fff; border: 1px solid #444;"
+    );
     label->setAlignment(Qt::AlignCenter);
     label->setText(QObject::tr("等待中 / Waiting..."));
     return label;
@@ -88,6 +90,7 @@ MainWindow::MainWindow()
     _preview.setStatusLabel(_statusLabel);
     _preview.setDevicesLayout(_devicesLayout);
     _preview.setArucoTracker(_arucoTracker.get());
+    _preview.setShowDepthPreview(_configManager.getShowDepthPreview());
 
     loadTaskTemplates();
     applyVlmConfigUi();
@@ -145,7 +148,9 @@ void MainWindow::setupUi()
     rootLayout->addWidget(_scrollArea, 1);
     _recordingLabel = new QLabel(tr("未在录制 / Not recording"), _scrollArea->viewport());
     _recordingLabel->setAlignment(Qt::AlignCenter);
-    _recordingLabel->setStyleSheet("background-color: #333; color: #fff; padding: 4px; font-weight: bold;");
+    _recordingLabel->setStyleSheet(
+        "background-color: #333; color: #fff; padding: 4px; font-weight: bold;"
+    );
     _recordingLabel->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     _recordingLabel->adjustSize();
     _recordingLabel->show();
@@ -1971,13 +1976,17 @@ void MainWindow::updateRecordingBanner()
     if (QThread::currentThread() == label->thread())
     {
         label->setText(text);
-        label->setStyleSheet(style);
+        label->setStyleSheet(
+            style
+        );
     }
     else
     {
         QMetaObject::invokeMethod(label, [label, text, style]() {
             label->setText(text);
-            label->setStyleSheet(style);
+            label->setStyleSheet(
+                style
+            );
         }, Qt::QueuedConnection);
     }
     positionRecordingLabel();
@@ -2140,7 +2149,10 @@ void MainWindow::ensurePromptWindow()
         return;
     _promptWindow = new QDialog(this);
     // Use a regular window type so standard minimize/maximize buttons show up
-    _promptWindow->setWindowFlags(Qt::Window | Qt::WindowCloseButtonHint | Qt::WindowMinimizeButtonHint | Qt::WindowMaximizeButtonHint);
+    _promptWindow->setWindowFlags(Qt::Window |
+                                  Qt::WindowCloseButtonHint |
+                                  Qt::WindowMinimizeButtonHint |
+                                  Qt::WindowMaximizeButtonHint);
     _promptWindow->setWindowTitle(tr("参与者提示 / Participant Prompt"));
     _promptWindow->setMinimumSize(520, 360);
     auto *layout = new QVBoxLayout(_promptWindow);
@@ -2189,5 +2201,5 @@ void MainWindow::updatePromptWindowMedia(const std::string &subtaskId, const std
     }
 }
 
-#include "MainWindow.moc"
 #include <utility>
+#include "MainWindow.moc"
