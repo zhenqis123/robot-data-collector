@@ -1,11 +1,11 @@
 #include "IntrinsicsManager.h"
 
+#include <filesystem>
+
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-
-#include <filesystem>
 
 IntrinsicsManager::IntrinsicsManager()
 {

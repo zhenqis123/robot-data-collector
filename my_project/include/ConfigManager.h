@@ -59,6 +59,7 @@ struct CameraConfig
         int height = 0;
         int frameRate = 0;
         int chunkSize = 0;
+        int bitrateKbps = 8000;
         StreamType streamType = StreamType::Color;
     };
     StreamConfig color;
@@ -94,6 +95,7 @@ public:
     const std::string &getTasksRootPath() const { return _tasksRoot; }
     const std::string &getCapturesRootPath() const { return _capturesRoot; }
     double getDisplayFpsLimit() const { return _displayFpsLimit; }
+    bool getShowDepthPreview() const { return _showDepthPreview; }
     const VlmConfig &getVlmConfig() const { return _vlmConfig; }
     const AudioPromptsConfig &getAudioPromptsConfig() const { return _audioConfig; }
 
@@ -104,6 +106,7 @@ private:
     std::string _tasksRoot;
     std::string _capturesRoot;
     double _displayFpsLimit{0.0};
+    bool _showDepthPreview{true};
     VlmConfig _vlmConfig;
     AudioPromptsConfig _audioConfig;
     Logger &_logger;

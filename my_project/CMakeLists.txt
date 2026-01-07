@@ -53,6 +53,7 @@ file(GLOB PROJECT_HEADERS CONFIGURE_DEPENDS
 set(PROJECT_SOURCES
     src/main.cpp
     src/MainWindow.cpp
+    src/CameraInterface.cpp
 
     src/TestGlove.cpp
     src/VDGloveDevice.cpp

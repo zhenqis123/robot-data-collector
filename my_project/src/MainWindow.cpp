@@ -1,50 +1,51 @@
 #include "MainWindow.h"
-#include "TacGlove.h"
 
+#include <algorithm>
+#include <cctype>
+#include <chrono>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <set>
+#include <unordered_map>
+
+#include <QApplication>
+#include <QCheckBox>
 #include <QComboBox>
+#include <QEventLoop>
+#include <QFile>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
-#include <QPushButton>
-#include <QScrollArea>
-#include <QVBoxLayout>
-#include <QWidget>
-#include <QSize>
-#include <QKeyEvent>
+#include <QMediaPlayer>
 #include <QMessageBox>
-#include <QTextEdit>
-#include <QThread>
-#include <QApplication>
-#include <QObject>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
-#include <QEventLoop>
+#include <QObject>
+#include <QPushButton>
+#include <QScrollArea>
+#include <QSize>
+#include <QTextEdit>
+#include <QThread>
 #include <QUrl>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonArray>
-#include <QMediaPlayer>
+#include <QVBoxLayout>
 #include <QVideoWidget>
-#include <QUrl>
-#include <QFileInfo>
-#include <QFile>
-#include <QCheckBox>
-
-#include <algorithm>
-#include <set>
-#include <filesystem>
-#include <fstream>
-#include <chrono>
-#include <cctype>
+#include <QWidget>
 #include <librealsense2/rs.hpp>
 #include <nlohmann/json.hpp>
-#include <cstdlib>
 #include <opencv2/imgcodecs.hpp>
-#include <unordered_map>
+#include <opencv2/imgproc.hpp>
+
+#include "TacGlove.h"
 
 using json = nlohmann::json;
 
@@ -54,7 +55,9 @@ std::unique_ptr<QLabel> makeDisplayLabel()
 {
     auto label = std::make_unique<QLabel>();
     label->setMinimumSize(320, 180);
-    label->setStyleSheet("background-color: #222; color: #fff; border: 1px solid #444;");
+    label->setStyleSheet(
+        "background-color: #222; color: #fff; border: 1px solid #444;"
+    );
     label->setAlignment(Qt::AlignCenter);
     label->setText(QObject::tr("等待中 / Waiting..."));
     return label;
@@ -87,6 +90,7 @@ MainWindow::MainWindow()
     _preview.setStatusLabel(_statusLabel);
     _preview.setDevicesLayout(_devicesLayout);
     _preview.setArucoTracker(_arucoTracker.get());
+    _preview.setShowDepthPreview(_configManager.getShowDepthPreview());
 
     loadTaskTemplates();
     applyVlmConfigUi();
@@ -144,7 +148,9 @@ void MainWindow::setupUi()
     rootLayout->addWidget(_scrollArea, 1);
     _recordingLabel = new QLabel(tr("未在录制 / Not recording"), _scrollArea->viewport());
     _recordingLabel->setAlignment(Qt::AlignCenter);
-    _recordingLabel->setStyleSheet("background-color: #333; color: #fff; padding: 4px; font-weight: bold;");
+    _recordingLabel->setStyleSheet(
+        "background-color: #333; color: #fff; padding: 4px; font-weight: bold;"
+    );
     _recordingLabel->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     _recordingLabel->adjustSize();
     _recordingLabel->show();
@@ -172,8 +178,8 @@ void MainWindow::updateControls()
     _endStepButton->setEnabled(recording);
     _retryButton->setEnabled(taskActive);
     _skipButton->setEnabled(taskActive);
-    // _errorButton->setEnabled(taskActive);
-    _abortButton->setEnabled(taskActive);
+    if (_abortButton)
+        _abortButton->setEnabled(taskActive);
     
     // Aux controls: disable connect toggle while running
     _chkConnectGlove->setEnabled(!hasCapture);
@@ -691,6 +697,7 @@ void MainWindow::onGenerateVlmTask()
 
     // Grab latest frame from preview if available
     std::optional<FrameData> latestFrame = _preview.latestFrame(cameraId);
+    if (!latestFrame.has_value() || !latestFrame->hasImage())
     if (!latestFrame.has_value() || latestFrame->image.empty())
     {
         QMessageBox::warning(this, tr("VLM"), tr("所选相机没有可用画面 / No frame available for selected camera."));
@@ -698,6 +705,16 @@ void MainWindow::onGenerateVlmTask()
     }
     // Save a temp image to pass to generator
     std::filesystem::path tempImg = std::filesystem::path(APP_LOG_DIR) / "vlm_input.png";
+    if (latestFrame->colorFormat == "YUYV")
+    {
+        cv::Mat bgr;
+        cv::cvtColor(latestFrame->imageRef(), bgr, cv::COLOR_YUV2BGR_YUY2);
+        cv::imwrite(tempImg.string(), bgr);
+    }
+    else
+    {
+        cv::imwrite(tempImg.string(), latestFrame->imageRef());
+    }
     cv::imwrite(tempImg.string(), latestFrame->image);
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
@@ -1627,8 +1644,6 @@ void MainWindow::onStartRecording()
         }
         _storage.setTaskSelection(_currentTask->sceneId, _currentTask->task.id,
                                   _currentTask->sourcePath, _currentTask->schemaVersion, "script");
-        auto info = gatherCaptureInfo();
-
         // Build allowed record types based on checkboxes
         std::unordered_set<std::string> typesToRecord;
         // Always record base cameras (RealSense, RGB, Webcam)
@@ -1643,6 +1658,7 @@ void MainWindow::onStartRecording()
             typesToRecord.insert("ViveTracker");
         }
 
+        auto info = gatherCaptureInfo();
         _capture->startRecording(info.name, info.subject, info.path, typesToRecord);
         logAnnotation("start_recording");
         _statusLabel->setText(tr("录制中 / Recording..."));
@@ -1962,13 +1978,17 @@ void MainWindow::updateRecordingBanner()
     if (QThread::currentThread() == label->thread())
     {
         label->setText(text);
-        label->setStyleSheet(style);
+        label->setStyleSheet(
+            style
+        );
     }
     else
     {
         QMetaObject::invokeMethod(label, [label, text, style]() {
             label->setText(text);
-            label->setStyleSheet(style);
+            label->setStyleSheet(
+                style
+            );
         }, Qt::QueuedConnection);
     }
     positionRecordingLabel();
@@ -2131,7 +2151,10 @@ void MainWindow::ensurePromptWindow()
         return;
     _promptWindow = new QDialog(this);
     // Use a regular window type so standard minimize/maximize buttons show up
-    _promptWindow->setWindowFlags(Qt::Window | Qt::WindowCloseButtonHint | Qt::WindowMinimizeButtonHint | Qt::WindowMaximizeButtonHint);
+    _promptWindow->setWindowFlags(Qt::Window |
+                                  Qt::WindowCloseButtonHint |
+                                  Qt::WindowMinimizeButtonHint |
+                                  Qt::WindowMaximizeButtonHint);
     _promptWindow->setWindowTitle(tr("参与者提示 / Participant Prompt"));
     _promptWindow->setMinimumSize(520, 360);
     auto *layout = new QVBoxLayout(_promptWindow);
@@ -2180,4 +2203,5 @@ void MainWindow::updatePromptWindowMedia(const std::string &subtaskId, const std
     }
 }
 
+#include <utility>
 #include "MainWindow.moc"

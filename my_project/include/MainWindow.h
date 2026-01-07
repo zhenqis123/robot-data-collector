@@ -219,3 +219,4 @@ private:
     bool throttleTrigger(const std::string &action, int ms);
     bool useChinesePrompts() const;
 };
+#include "ArucoTracker.h"

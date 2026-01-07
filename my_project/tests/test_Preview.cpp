@@ -47,6 +47,7 @@ TEST(PreviewTest, UpdatesLabelPixmap)
     FrameData frame;
     frame.cameraId = "Preview";
     frame.timestamp = std::chrono::system_clock::now();
+    frame.image = std::make_shared<cv::Mat>(cv::Mat::ones(20, 20, CV_8UC3));
     frame.image = cv::Mat::ones(20, 20, CV_8UC3);
 
     preview.showFrame(frame);

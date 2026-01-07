@@ -1,10 +1,12 @@
 #pragma once
 
 #include <array>
+#include <functional>
 #include <memory>
 #include <string>
 #include <opencv2/core.hpp>
 #include <chrono>
+
 #include <optional>
 #include <variant>
 
@@ -19,9 +21,17 @@ struct FrameData
 {
     cv::Mat image;
     cv::Mat depth;
+    std::shared_ptr<void> imageOwner;
+    std::shared_ptr<void> depthOwner;
     std::chrono::system_clock::time_point timestamp;
     int64_t deviceTimestampMs{0};
     std::string cameraId;
+    std::string colorFormat;
+
+    bool hasImage() const { return !image.empty(); }
+    bool hasDepth() const { return !depth.empty(); }
+    const cv::Mat &imageRef() const { return image; }
+    const cv::Mat &depthRef() const { return depth; }
     
     // Optional sensor data
     std::optional<VDGloveFrameData> gloveData;
@@ -62,6 +72,7 @@ struct FrameWriter
 {
     virtual ~FrameWriter() = default;
     virtual bool write(const FrameData &frame) = 0;
+    virtual void setWriteCallback(std::function<void()> callback) { (void)callback; }
 };
 
 std::unique_ptr<FrameWriter> makePngWriter(const std::string &deviceId,
@@ -71,7 +82,8 @@ std::unique_ptr<FrameWriter> makeGstHdf5Writer(const std::string &deviceId,
                                                const std::string &basePath,
                                                Logger &logger,
                                                int colorFps,
-                                               int depthChunkSize);
+                                               int depthChunkSize,
+                                               int colorBitrateKbps);
 
 class CameraInterface
 {

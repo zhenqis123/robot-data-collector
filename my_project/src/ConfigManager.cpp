@@ -1,12 +1,13 @@
 #include "ConfigManager.h"
 
+#include <filesystem>
+
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 
 #include "Logger.h"
-#include <filesystem>
 
 namespace
 {
@@ -48,6 +49,7 @@ bool ConfigManager::load(const std::string &path)
     _audioConfig = {};
     _capturesRoot.clear();
     _displayFpsLimit = 0.0;
+    _showDepthPreview = true;
 
     const auto cameras = doc.object().value("cameras").toArray();
     for (const auto &entry : cameras)
@@ -84,6 +86,8 @@ bool ConfigManager::load(const std::string &path)
                     stream.frameRate = streamObj.value("frame_rate").toInt(stream.frameRate);
                 if (streamObj.contains("chunk_size"))
                     stream.chunkSize = streamObj.value("chunk_size").toInt(0);
+                if (streamObj.contains("bitrate_kbps"))
+                    stream.bitrateKbps = streamObj.value("bitrate_kbps").toInt(stream.bitrateKbps);
             }
             return stream;
         };
@@ -135,6 +139,7 @@ bool ConfigManager::load(const std::string &path)
     }
 
     _displayFpsLimit = doc.object().value("display_fps_limit").toDouble(0.0);
+    _showDepthPreview = doc.object().value("show_depth_preview").toBool(true);
 
     // tasks_path
     {

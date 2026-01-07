@@ -1,16 +1,18 @@
-#include "VDGloveInterface.h"
-#include "ViveInterface.h"
-#include "CameraInterface.h"
-#include "Logger.h"
-
-#include <iostream>
-#include <opencv2/highgui.hpp> 
-#include <opencv2/imgproc.hpp>
-#include <thread>
+#include <atomic>
 #include <chrono>
 #include <csignal>
-#include <atomic>
+#include <iostream>
+#include <thread>
 #include <unistd.h>
+
+#include <opencv2/highgui.hpp> 
+#include <opencv2/imgproc.hpp>
+
+#include "CameraInterface.h"
+#include "Logger.h"
+#include "VDGloveInterface.h"
+#include "ViveInterface.h"
+
 std::atomic<bool> g_running{true};
 
 void signalHandler(int signum) {
@@ -129,11 +131,11 @@ int test() {
     }
     std::cout << "Exiting main loop..." << std::endl;
 
-    if(vive){
+    if (vive){
         vive->close();
     }
     // camera->close();
-    if(glove){
+    if (glove){
         glove->close();
     }
     

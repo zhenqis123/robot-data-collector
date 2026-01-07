@@ -1,7 +1,8 @@
 #include "NetworkDevice.h"
 
-#include <opencv2/imgproc.hpp>
 #include <thread>
+
+#include <opencv2/imgproc.hpp>
 
 #include "Logger.h"
 
@@ -42,6 +43,7 @@ FrameData NetworkDevice::captureFrame()
                                  std::chrono::steady_clock::now().time_since_epoch())
                                  .count();
     data.cameraId = _label;
+    data.colorFormat = "BGR";
     if (_config.frameRate > 0)
         std::this_thread::sleep_for(std::chrono::milliseconds(1000 / _config.frameRate));
     return data;
@@ -73,5 +75,10 @@ CaptureMetadata NetworkDevice::captureMetadata() const
 
 std::unique_ptr<FrameWriter> NetworkDevice::makeWriter(const std::string &basePath, Logger &logger)
 {
-    return makeGstHdf5Writer(_label, basePath, logger, _config.frameRate, _config.depth.chunkSize);
+    return makeGstHdf5Writer(_label,
+                             basePath,
+                             logger,
+                             _config.frameRate,
+                             _config.depth.chunkSize,
+                             _config.color.bitrateKbps);
 }

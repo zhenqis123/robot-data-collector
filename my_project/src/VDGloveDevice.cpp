@@ -1,15 +1,16 @@
-#include "VDGloveInterface.h"
-#include "GloveMath.h"
-#include "VDSDKLoader.h"
-#include <thread>
-#include <mutex>
-#include <condition_variable>
 #include <atomic>
-#include <cstring>
 #include <chrono>
-#include <fstream>
+#include <condition_variable>
+#include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
+#include <mutex>
+#include <thread>
+
+#include "GloveMath.h"
+#include "VDGloveInterface.h"
+#include "VDSDKLoader.h"
 
 #ifdef _WIN32
 #include <windows.h>   // Windows
@@ -348,7 +349,7 @@ private:
         // --- 右手处理 ---
         {
             std::vector<Eigen::Vector3f> raw_pts;
-            for(int i=0; i<LENGTH_HAND; i++) {
+            for (int i=0; i<LENGTH_HAND; i++) {
                 float x = data.position_rHand[i*3 + 0];
                 float y = data.position_rHand[i*3 + 1];
                 float z = data.position_rHand[i*3 + 2];
@@ -380,7 +381,7 @@ private:
         // --- 左手处理 ---
         {
             std::vector<Eigen::Vector3f> raw_pts;
-            for(int i=0; i<LENGTH_HAND; i++) {
+            for (int i=0; i<LENGTH_HAND; i++) {
                 float x = data.position_lHand[i*3 + 0];
                 float y = data.position_lHand[i*3 + 1];
                 float z = data.position_lHand[i*3 + 2];

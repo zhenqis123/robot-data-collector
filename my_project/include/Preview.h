@@ -26,6 +26,7 @@ public:
 
     void setStatusLabel(QLabel *label);
     void setDevicesLayout(QVBoxLayout *layout);
+    void setShowDepthPreview(bool enabled);
     void registerCameraView(const std::string &cameraId, const std::string &type);
     void clearViews();
     void showFrame(const FrameData &frame);
@@ -56,6 +57,7 @@ private:
     Logger &_logger;
     mutable std::mutex _mutex;
     ArucoTracker *_arucoTracker{nullptr};
+    bool _showDepthPreview{true};
 
     static QImage matToQImage(const cv::Mat &mat);
     static QImage depthToQImage(const cv::Mat &mat);

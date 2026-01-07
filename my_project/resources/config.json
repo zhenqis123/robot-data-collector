@@ -1,7 +1,8 @@
 {
   "tasks_path": "tasks",
   "captures_path": "logs/captures",
-  "display_fps_limit": 15,
+  "display_fps_limit": 5,
+  "show_depth_preview": false,
   "vlm": {
     "model": "qwen3-vl-plus",
     "endpoint": "https://api.probex.top/v1/chat/completions",
@@ -16,7 +17,7 @@
     "volume": 100,
     "index_tts": {
       "endpoint": "http://192.168.20.173:6006/tts_url",
-      "audio_paths": ["/home/zc/robot-data-collector/index-tts-vllm/assets/jay_promptvn.wav"]
+      "audio_paths": ["/home/xiziheng/develop/data_collector/index-tts-vllm/assets/jay_promptvn.wav"]
     },
     "texts": {
       "start": "录制开始。任务{task_id}，步骤{step_id}：{step_desc}。",
@@ -47,16 +48,15 @@
     {
       "type": "RealSense",
       "id": 0,
-      "serial": "017322074878", 
       "align_depth": false,
       "color": {
-        "resolution": "640x480",
+        "resolution": "640x360",
         "frame_rate": 30
       },
       "depth": {
-        "resolution": "640X360",
+        "resolution": "640x360",
         "frame_rate": 30,
-        "chunk_size": 64
+        "chunk_size": 8
       }
     },
     {
