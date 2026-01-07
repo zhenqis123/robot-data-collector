@@ -6,7 +6,7 @@ int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
 
-    QString file = "/home/xiziheng/develop/data_collector/piper_output.wav";
+    QString file = "piper_output.wav";
     if (argc > 1)
         file = argv[1];
 

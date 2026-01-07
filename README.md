@@ -98,6 +98,12 @@ python3 test_index_tts.py
 在仓库根目录执行 Debug 构建：
 
 ```bash
+rm -rf my_project/build
+export PATH=$(echo $PATH | tr ':' '\n' | grep -v "anaconda" | tr '\n' ':' | sed 's/:$//')
+unset CONDA_PREFIX
+unset CONDA_DEFAULT_ENV
+
+
 cmake -S my_project -B my_project/build -DCMAKE_BUILD_TYPE=Debug
 cmake --build my_project/build -j
 ./my_project/build/DataCollectorApp

@@ -1,6 +1,6 @@
 {
   "tasks_path": "tasks",
-  "captures_path": "/home/xiziheng/develop/data_collector/my_project/resources/logs/captures",
+  "captures_path": "logs/captures",
   "display_fps_limit": 15,
   "vlm": {
     "model": "qwen3-vl-plus",

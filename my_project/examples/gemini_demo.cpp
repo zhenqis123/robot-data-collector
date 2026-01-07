@@ -78,17 +78,19 @@ int main() {
     // 目标 API：OpenAI 兼容多模态接口
     std::string url = "https://api.gptoai.top/v1/chat/completions";
 
-    // 读取并编码本地图片（desk.jpg 1279x1706）
-    const std::string imagePath = "/home/xiziheng/develop/data_collector/desk.jpg";
+    // 读取并编码本地图片（desk.jpg）
+    // Default to current directory or relative path
+    const std::string imagePath = "desk.jpg";
     auto imageData = readBinaryFile(imagePath);
     if (imageData.empty()) {
-        std::cerr << "无法读取图片文件: " << imagePath << std::endl;
+        std::cerr << "无法读取图片文件: " << imagePath << " (Please ensure desk.jpg is in the current directory)" << std::endl;
         return 1;
     }
     std::string imgBase64 = base64Encode(imageData);
 
     // 从 prompt 文件加载 system prompt（对齐任务模板结构）
-    const std::string promptPath = "/home/xiziheng/develop/data_collector/my_project/resources/prompts/vlm_task_prompt.txt";
+    // Assuming run from build directory, resources are in ../resources
+    const std::string promptPath = "../resources/prompts/vlm_task_prompt.txt";
     std::string promptText = readFileToString(promptPath);
     if (promptText.empty()) {
         promptText = "You are a vision-language planner. Output JSON only.";
@@ -154,7 +156,7 @@ int main() {
                 auto respJson = json::parse(responseString);
                 auto content = respJson["choices"][0]["message"]["content"];
 
-                const std::string outPath = "/home/xiziheng/develop/data_collector/my_project/resources/logs/vlm_output.json";
+                const std::string outPath = "../resources/logs/vlm_output.json";
                 json parsedOutput;
 
                 if (content.is_array()) {
