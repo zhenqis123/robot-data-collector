@@ -43,7 +43,6 @@ qrc_*.cpp
 # Logs and runtime artifacts
 *.log
 my_project/resources/logs/
-my_project/resources/config.json
 
 # External/optional components
 librealsense/
@@ -57,9 +56,11 @@ sess*/
 aruco_print_out/
 print_out/
 sess*/
-my_project/resources/config.json
 data/
 vis/
-my_project/resources/config.json
 my_project/resources/task_backup
 TODO.md
+data_new/
+outputs/
+tracking_results/
+third_party/
