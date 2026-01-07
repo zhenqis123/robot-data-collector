@@ -43,6 +43,7 @@ class QGroupBox;
 class QDialog;
 class QMediaPlayer;
 class QVideoWidget;
+class QCheckBox;
 
 class MainWindow : public QMainWindow
 {
@@ -70,6 +71,7 @@ private slots:
     void onTaskSelectionChanged(int index);
     void onModeChanged(int index);
     void onGenerateVlmTask();
+    void onClearTacOffsets();
 
 private:
     Logger _logger;
@@ -93,6 +95,8 @@ private:
     QPushButton *_endStepButton{nullptr};
     QPushButton *_skipButton{nullptr};
     QPushButton *_retryButton{nullptr};
+    QPushButton *_abortButton{nullptr};
+    QPushButton *_clearTacButton{nullptr};
     QPushButton *_keyframeButton{nullptr};
     QComboBox *_modeSelect{nullptr};
     QPushButton *_applySettingsButton{nullptr};
@@ -129,6 +133,12 @@ private:
     QComboBox *_vlmCameraSelect{nullptr};
     QPushButton *_viewTaskButton{nullptr};
     AudioPromptsConfig _audioConfig;
+    
+    // Aux Controls
+    QCheckBox *_chkConnectGlove{nullptr};
+    QCheckBox *_chkSaveGlove{nullptr};
+    QCheckBox *_chkConnectVive{nullptr};
+    QCheckBox *_chkSaveVive{nullptr};
 
     std::vector<TaskTemplate> _taskTemplates;
     std::optional<TaskTemplate> _currentTask;
@@ -152,10 +162,12 @@ private:
     QGroupBox *createTaskSelectionGroup();
     QGroupBox *createVlmGroup();
     QGroupBox *createCameraControlGroup();
+    QGroupBox *createTacGloveGroup();
     QGroupBox *createCaptureControlGroup();
     QGroupBox *createPromptControlGroup();
     QGroupBox *createCameraSettingsGroup();
     QGroupBox *createStatusGroup();
+    QGroupBox *createAuxDeviceGroup();
     void loadTaskTemplates();
     void populateSceneList();
     void populateTaskList(const std::string &sceneId);

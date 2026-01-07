@@ -47,6 +47,7 @@
     {
       "type": "RealSense",
       "id": 0,
+<<<<<<< HEAD
       "align_depth": false,
       "color": {
         "resolution": "1280X720",
@@ -58,6 +59,35 @@
         "frame_rate": 30,
         "chunk_size": 8
       }
+=======
+      "serial": "017322074878", 
+      "align_depth": false,
+      "color": {
+        "resolution": "640x480",
+        "frame_rate": 30
+      },
+      "depth": {
+        "resolution": "640X360",
+        "frame_rate": 30,
+        "chunk_size": 64
+      }
+    },
+    {
+      "type": "VDGlove",
+      "id": 3,
+      "server_ip": "192.168.20.240",
+      "server_port": 9998,
+      "local_port": 9999,
+      "device_index": 0,
+      "process_mano": true,
+      "target_fps": 30.0
+    },
+    {
+      "type": "Vive",
+      "id": 4,
+      "port": 6666,
+      "target_fps": 60.0
+>>>>>>> feature/tac-hand-devices
     }
   ],
   "aruco_targets": [

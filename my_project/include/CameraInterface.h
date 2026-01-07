@@ -9,6 +9,13 @@
 
 #include "ConfigManager.h"
 #include "IntrinsicsManager.h"
+#include <optional>
+#include <variant>
+
+#include "ConfigManager.h"
+#include "IntrinsicsManager.h"
+#include "VDGloveDataTypes.h"
+#include "ViveDataTypes.h"
 
 class Logger;
 
@@ -25,6 +32,15 @@ struct FrameData
     bool hasDepth() const { return depth && !depth->empty(); }
     const cv::Mat &imageRef() const { return *image; }
     const cv::Mat &depthRef() const { return *depth; }
+    cv::Mat image;
+    cv::Mat depth;
+    std::chrono::system_clock::time_point timestamp;
+    int64_t deviceTimestampMs{0};
+    std::string cameraId;
+    
+    // Optional sensor data
+    std::optional<VDGloveFrameData> gloveData;
+    std::optional<ViveFrameData> viveData;
 };
 struct ArucoDetection
 {
@@ -73,6 +89,7 @@ std::unique_ptr<FrameWriter> makeGstHdf5Writer(const std::string &deviceId,
                                                int colorFps,
                                                int depthChunkSize,
                                                int colorBitrateKbps);
+                                               int depthChunkSize);
 
 class CameraInterface
 {

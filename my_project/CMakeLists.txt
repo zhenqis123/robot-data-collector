@@ -10,6 +10,11 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 find_package(OpenCV REQUIRED)
+find_package(Eigen3 3.3 REQUIRED NO_MODULE)
+include_directories(
+    ${PROJECT_SOURCE_DIR}/include  
+    ${EIGEN3_INCLUDE_DIR}          
+)
 
 find_package(Qt5 COMPONENTS Widgets Core Network Multimedia MultimediaWidgets Concurrent REQUIRED)
 set(QT_LIBS Qt5::Widgets Qt5::Core Qt5::Network Qt5::Multimedia Qt5::MultimediaWidgets Qt5::Concurrent)
@@ -49,6 +54,13 @@ set(PROJECT_SOURCES
     src/main.cpp
     src/MainWindow.cpp
     src/CameraInterface.cpp
+
+    src/TestGlove.cpp
+    src/VDGloveDevice.cpp
+    src/ViveDevice.cpp
+    
+    src/CameraInterface.cpp
+
     src/DataCapture.cpp
     src/DataStorage.cpp
     src/Preview.cpp
@@ -61,12 +73,14 @@ set(PROJECT_SOURCES
     src/TaskStateMachine.cpp
     src/AudioPromptPlayer.cpp
     src/NetworkDevice.cpp
+    src/TacGlove.cpp
 )
 
 add_executable(${PROJECT_NAME}
     ${PROJECT_SOURCES}
     ${PROJECT_HEADERS}
 )
+
 
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
@@ -77,6 +91,7 @@ target_link_libraries(${PROJECT_NAME}
         HDF5::HDF5
         apriltag
         Threads::Threads
+        rt  # POSIX shared memory and semaphores
 )
 target_include_directories(${PROJECT_NAME}
     PRIVATE

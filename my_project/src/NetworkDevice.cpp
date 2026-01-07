@@ -36,13 +36,20 @@ FrameData NetworkDevice::captureFrame()
     cv::putText(frame, _label, {20, 40}, cv::FONT_HERSHEY_SIMPLEX, 1.0, {200, 200, 200}, 2);
     if (!_config.endpoint.empty())
         cv::putText(frame, _config.endpoint, {20, 80}, cv::FONT_HERSHEY_SIMPLEX, 0.6, {150, 200, 150}, 2);
+<<<<<<< HEAD
     data.image = std::make_shared<cv::Mat>(frame);
+=======
+    data.image = frame;
+>>>>>>> feature/tac-hand-devices
     data.timestamp = std::chrono::system_clock::now();
     data.deviceTimestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                                  std::chrono::steady_clock::now().time_since_epoch())
                                  .count();
     data.cameraId = _label;
+<<<<<<< HEAD
     data.colorFormat = "BGR8";
+=======
+>>>>>>> feature/tac-hand-devices
     if (_config.frameRate > 0)
         std::this_thread::sleep_for(std::chrono::milliseconds(1000 / _config.frameRate));
     return data;

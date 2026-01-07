@@ -25,6 +25,11 @@
 #include "IntrinsicsManager.h"
 #include "Logger.h"
 #include "NetworkDevice.h"
+<<<<<<< HEAD
+=======
+#include "VDGloveInterface.h"
+#include "ViveInterface.h"
+>>>>>>> feature/tac-hand-devices
 
 namespace
 {
@@ -66,13 +71,20 @@ public:
                       _model == "RealSense" ? cv::Scalar(20, 40, 200) : cv::Scalar(40, 200, 20));
         cv::putText(frame, _label, {20, 40}, cv::FONT_HERSHEY_SIMPLEX, 1.0, {255, 255, 255}, 2);
 
+<<<<<<< HEAD
         data.image = std::make_shared<cv::Mat>(frame);
+=======
+        data.image = frame;
+>>>>>>> feature/tac-hand-devices
         data.timestamp = std::chrono::system_clock::now();
         data.deviceTimestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                                      std::chrono::steady_clock::now().time_since_epoch())
                                      .count();
         data.cameraId = _label;
+<<<<<<< HEAD
         data.colorFormat = "BGR8";
+=======
+>>>>>>> feature/tac-hand-devices
 
         if (_config.frameRate > 0)
         {
@@ -93,9 +105,15 @@ public:
     std::vector<CameraConfig::StreamConfig> getAvailableResolutions() const override
     {
         return {
+<<<<<<< HEAD
             {640, 480, 30, 0, 8000, CameraConfig::StreamConfig::StreamType::Color},
             {1280, 720, 30, 0, 8000, CameraConfig::StreamConfig::StreamType::Color},
             {1920, 1080, 30, 0, 8000, CameraConfig::StreamConfig::StreamType::Color}
+=======
+            {640, 480, 30, 0, CameraConfig::StreamConfig::StreamType::Color},
+            {1280, 720, 30, 0, CameraConfig::StreamConfig::StreamType::Color},
+            {1920, 1080, 30, 0, CameraConfig::StreamConfig::StreamType::Color}
+>>>>>>> feature/tac-hand-devices
         };
     }
 
@@ -147,11 +165,22 @@ public:
                 _rsConfig.enable_device(config.serial);
                 _logger.info("Binding RealSense to serial %s", config.serial.c_str());
             }
+<<<<<<< HEAD
             _rsConfig.enable_stream(RS2_STREAM_COLOR, colorWidth, colorHeight, RS2_FORMAT_YUYV, colorFps);
             _rsConfig.enable_stream(RS2_STREAM_DEPTH, depthWidth, depthHeight, RS2_FORMAT_Z16, depthFps);
             auto profile = _pipeline.start(_rsConfig);
             _device = profile.get_device();
             auto dev = _device;
+=======
+            _rsConfig.enable_stream(RS2_STREAM_COLOR, colorWidth, colorHeight, RS2_FORMAT_BGR8, colorFps);
+            _logger.info("RealSense color stream: %dx%d @ %d FPS", colorWidth, colorHeight, colorFps);
+            _rsConfig.enable_stream(RS2_STREAM_DEPTH, depthWidth, depthHeight, RS2_FORMAT_Z16, depthFps);
+            _logger.info("RealSense depth stream: %dx%d @ %d FPS", depthWidth, depthHeight, depthFps);
+            auto profile = _pipeline.start(_rsConfig);
+            _logger.info("RealSense pipeline started");
+            auto dev = profile.get_device();
+            _logger.info("RealSense device connected: %s", dev.get_info(RS2_CAMERA_INFO_NAME));
+>>>>>>> feature/tac-hand-devices
             for (auto &&sensor : dev.query_sensors())
             {
                 if (sensor.supports(RS2_OPTION_GLOBAL_TIME_ENABLED))
@@ -225,7 +254,11 @@ public:
             _metadata.depthScale = _depthScale;
             _metadata.colorFps = colorFps;
             _metadata.depthFps = depthFps;
+<<<<<<< HEAD
             _metadata.colorFormat = "YUYV";
+=======
+            _metadata.colorFormat = "BGR8";
+>>>>>>> feature/tac-hand-devices
             _metadata.depthFormat = "Z16";
             auto colorIntr = colorProfile.get_intrinsics();
             _metadata.colorIntrinsics.stream = "color";
@@ -278,17 +311,29 @@ public:
                 return data;
             }
 
+<<<<<<< HEAD
             cv::Mat colorMat(cv::Size(color.get_width(), color.get_height()), CV_8UC2,
+=======
+            cv::Mat colorMat(cv::Size(color.get_width(), color.get_height()), CV_8UC3,
+>>>>>>> feature/tac-hand-devices
                              const_cast<void *>(color.get_data()), cv::Mat::AUTO_STEP);
             cv::Mat depthMat(cv::Size(depth.get_width(), depth.get_height()), CV_16U,
                              const_cast<void *>(depth.get_data()), cv::Mat::AUTO_STEP);
 
+<<<<<<< HEAD
             data.image = std::make_shared<cv::Mat>(colorMat.clone());
             data.depth = std::make_shared<cv::Mat>(depthMat.clone());
             data.timestamp = std::chrono::system_clock::now();
             data.deviceTimestampMs = static_cast<int64_t>(color.get_timestamp());
             data.cameraId = _identifier;
             data.colorFormat = "YUYV";
+=======
+            data.image = colorMat.clone();
+            data.depth = depthMat.clone();
+            data.timestamp = std::chrono::system_clock::now();
+            data.deviceTimestampMs = static_cast<int64_t>(color.get_timestamp());
+            data.cameraId = _identifier;
+>>>>>>> feature/tac-hand-devices
         }
         catch (const rs2::error &e)
         {

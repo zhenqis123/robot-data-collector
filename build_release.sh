@@ -10,7 +10,10 @@ echo "Cleaning previous Release build directory: $BUILD_DIR"
 rm -rf "$BUILD_DIR"
 
 echo "Configuring CMake (Release)..."
-cmake -S "$PROJECT_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
+# 使用系统编译器而不是 conda 环境的编译器
+cmake -S "$PROJECT_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER=/usr/bin/gcc \
+    -DCMAKE_CXX_COMPILER=/usr/bin/g++
 
 echo "Building (Release)..."
 cmake --build "$BUILD_DIR" -j --target DataCollectorApp

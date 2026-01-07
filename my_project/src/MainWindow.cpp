@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "TacGlove.h"
 
 #include <QComboBox>
 #include <QFormLayout>
@@ -31,6 +32,7 @@
 #include <QUrl>
 #include <QFileInfo>
 #include <QFile>
+#include <QCheckBox>
 
 #include <algorithm>
 #include <set>
@@ -113,6 +115,8 @@ void MainWindow::setupUi()
     controlsLayout->addWidget(createTaskSelectionGroup());
     controlsLayout->addWidget(createVlmGroup());
     controlsLayout->addWidget(createCameraControlGroup());
+    controlsLayout->addWidget(createTacGloveGroup());
+    controlsLayout->addWidget(createAuxDeviceGroup());
     controlsLayout->addWidget(createCaptureControlGroup());
     controlsLayout->addWidget(createPromptControlGroup());
     controlsLayout->addWidget(createCameraSettingsGroup());
@@ -169,6 +173,21 @@ void MainWindow::updateControls()
     _endStepButton->setEnabled(recording);
     _retryButton->setEnabled(taskActive);
     _skipButton->setEnabled(taskActive);
+    _errorButton->setEnabled(taskActive);
+    _abortButton->setEnabled(taskActive);
+    
+    // Aux controls: disable connect toggle while running
+    _chkConnectGlove->setEnabled(!hasCapture);
+    _chkConnectVive->setEnabled(!hasCapture);
+    // Save toggle can be changed anytime? Or only before recording?
+    // Let's allow changing save status only when not recording to avoid confusion
+    _chkSaveGlove->setEnabled(!recording);
+    _chkSaveVive->setEnabled(!recording);
+
+    // TacGlove calibration requires capture running
+    if (_clearTacButton)
+        _clearTacButton->setEnabled(hasCapture);
+
     if (_keyframeButton)
         _keyframeButton->setEnabled(recording);
     if (_vlmCameraSelect)
@@ -309,6 +328,7 @@ void MainWindow::connectSignals()
 {
     connect(_openButton, &QPushButton::clicked, this, &MainWindow::onOpenCameras);
     connect(_closeButton, &QPushButton::clicked, this, &MainWindow::onCloseCameras);
+    connect(_clearTacButton, &QPushButton::clicked, this, &MainWindow::onClearTacOffsets);
     connect(_startCaptureButton, &QPushButton::clicked, this, &MainWindow::onStartRecording);
     connect(_stopCaptureButton, &QPushButton::clicked, this, &MainWindow::onStopRecording);
     connect(_pauseButton, &QPushButton::clicked, this, &MainWindow::onPauseRecording);
@@ -400,6 +420,39 @@ QGroupBox *MainWindow::createCameraControlGroup()
     _closeButton = new QPushButton(tr("关闭 / Close"));
     layout->addWidget(_openButton);
     layout->addWidget(_closeButton);
+    return box;
+}
+
+QGroupBox *MainWindow::createTacGloveGroup()
+{
+    auto *box = new QGroupBox(tr("TacGloves"), _controlPanel);
+    auto *layout = new QHBoxLayout(box);
+    _clearTacButton = new QPushButton(tr("clear initial tac"));
+    layout->addWidget(_clearTacButton);
+    layout->addStretch();
+    return box;
+}
+
+QGroupBox *MainWindow::createAuxDeviceGroup()
+{
+    auto *box = new QGroupBox(tr("Auxiliary Devices"), _controlPanel);
+    auto *layout = new QGridLayout(box);
+
+    _chkConnectGlove = new QCheckBox("VDGlove");
+    _chkConnectGlove->setChecked(true);
+    _chkSaveGlove = new QCheckBox("Save");
+    _chkSaveGlove->setChecked(true);
+
+    _chkConnectVive = new QCheckBox("Vive");
+    _chkConnectVive->setChecked(true);
+    _chkSaveVive = new QCheckBox("Save");
+    _chkSaveVive->setChecked(true);
+
+    layout->addWidget(_chkConnectGlove, 0, 0);
+    layout->addWidget(_chkSaveGlove, 0, 1);
+    layout->addWidget(_chkConnectVive, 1, 0);
+    layout->addWidget(_chkSaveVive, 1, 1);
+
     return box;
 }
 
@@ -638,6 +691,7 @@ void MainWindow::onGenerateVlmTask()
     // Grab latest frame from preview if available
     std::optional<FrameData> latestFrame = _preview.latestFrame(cameraId);
     if (!latestFrame.has_value() || !latestFrame->hasImage())
+    if (!latestFrame.has_value() || latestFrame->image.empty())
     {
         QMessageBox::warning(this, tr("VLM"), tr("所选相机没有可用画面 / No frame available for selected camera."));
         return;
@@ -654,6 +708,7 @@ void MainWindow::onGenerateVlmTask()
     {
         cv::imwrite(tempImg.string(), latestFrame->imageRef());
     }
+    cv::imwrite(tempImg.string(), latestFrame->image);
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
     auto generated = generateTaskFromVlm(tempImg.string());
@@ -1449,6 +1504,14 @@ void MainWindow::onOpenCameras()
     std::vector<DeviceSpec> devices;
     for (auto &cfg : configs)
     {
+        // Check filtering for Aux devices
+        if (cfg.type == "VDGlove" && !_chkConnectGlove->isChecked()) {
+            continue;
+        }
+        if ((cfg.type == "Vive" || cfg.type == "ViveTracker") && !_chkConnectVive->isChecked()) {
+            continue;
+        }
+
         if (cfg.type == "RealSense" && cfg.serial.empty())
         {
             if (rsIndex < rsSerials.size())
@@ -1477,6 +1540,26 @@ void MainWindow::onOpenCameras()
     }
 
     _capture = std::make_unique<DataCapture>(std::move(devices),
+    // 创建 TacGlove 设备（使用 Both 模式，单个实例同时采集左右手）
+    std::vector<TacGloveSpec> tacGloves;
+
+    auto tacGlove = createTacGlove("Local", _logger);
+    if (tacGlove && tacGlove->initialize("TacGlove#0", TacGloveMode::Both))
+    {
+        TacGloveSpec spec;
+        spec.device = std::move(tacGlove);
+        spec.deviceId = "TacGlove#0";
+        spec.mode = TacGloveMode::Both;
+        tacGloves.push_back(std::move(spec));
+        _logger.info("TacGlove initialized in Both mode");
+    }
+    else
+    {
+        _logger.warn("Failed to initialize TacGlove device");
+    }
+
+    _capture = std::make_unique<DataCapture>(std::move(devices),
+                                             std::move(tacGloves),
                                              _storage, _preview, _logger,
                                              _arucoTracker.get(),
                                              _configManager.getDisplayFpsLimit());
@@ -1510,6 +1593,26 @@ void MainWindow::onCloseCameras()
     updateControls();
 }
 
+void MainWindow::onClearTacOffsets()
+{
+    if (!_capture || !_capture->isRunning())
+    {
+        QMessageBox::information(this, tr("TacGloves"), 
+            tr("Please open cameras before calibrating TacGlove offsets."));
+        return;
+    }
+
+    const bool updated = _capture->calibrateTacGloveOffsets();
+    if (updated)
+    {
+        _statusLabel->setText("TacGlove offsets calibrated");
+    }
+    else
+    {
+        _statusLabel->setText("TacGlove calibration: no valid data");
+    }
+}
+
 void MainWindow::onStartRecording()
 {
     if (_capture)
@@ -1537,6 +1640,22 @@ void MainWindow::onStartRecording()
                                   _currentTask->sourcePath, _currentTask->schemaVersion, "script");
         auto info = gatherCaptureInfo();
         _capture->startRecording(info.name, info.subject, info.path);
+
+        // Build allowed record types based on checkboxes
+        std::unordered_set<std::string> typesToRecord;
+        // Always record base cameras (RealSense, RGB, Webcam)
+        typesToRecord.insert("RealSense");
+        typesToRecord.insert("RGB");
+        typesToRecord.insert("Webcam");
+        typesToRecord.insert("Network");
+        
+        if (_chkSaveGlove->isChecked()) typesToRecord.insert("VDGlove");
+        if (_chkSaveVive->isChecked()) {
+            typesToRecord.insert("Vive");
+            typesToRecord.insert("ViveTracker");
+        }
+
+        _capture->startRecording(info.name, info.subject, info.path, typesToRecord);
         logAnnotation("start_recording");
         _statusLabel->setText(tr("录制中 / Recording..."));
         _audioPlayer.play("start", _currentTask->task.id, "", "", makeStartPromptText());
