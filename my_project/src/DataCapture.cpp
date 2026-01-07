@@ -2,10 +2,10 @@
 
 #include <utility>
 
+#include "ArucoTracker.h"
 #include "DataStorage.h"
 #include "Logger.h"
 #include "Preview.h"
-#include "ArucoTracker.h"
 
 DataCapture::DataCapture(std::vector<DeviceSpec> devices,
                          std::vector<TacGloveSpec> tacGloves,
@@ -25,6 +25,7 @@ DataCapture::DataCapture(std::vector<DeviceSpec> devices,
         _displayInterval = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
             std::chrono::duration<double>(1.0 / _displayFpsLimit));
     }
+
     for (auto &spec : devices)
     {
         auto ctx = std::make_unique<DeviceContext>();
@@ -42,7 +43,6 @@ DataCapture::DataCapture(std::vector<DeviceSpec> devices,
         }
     }
 
-    // 初始化 TacGlove 设备
     for (auto &spec : tacGloves)
     {
         auto ctx = std::make_unique<TacGloveContext>();
@@ -85,30 +85,23 @@ bool DataCapture::start()
         auto *ctx = ctxPtr.get();
         ctx->storageRunning = true;
         ctx->displayRunning = true;
-        ctx->writer = ctx->device ? ctx->device->makeWriter(_storage.basePath(), _logger) : nullptr;
-        if (ctx->writer && ctx->device && ctx->stats)
         {
-            auto stats = ctx->stats;
-            auto cameraId = ctx->device->name();
-            ctx->writer->setWriteCallback([this, stats, cameraId]() {
-                if (auto fps = stats->recordWrite())
-                    _preview.updateCameraStats(cameraId, *fps);
-            });
+            std::lock_guard<std::mutex> lock(ctx->storageMutex);
+            ctx->writer.reset();
         }
-        // Writer is created on startRecording, not here.
-        ctx->writer = nullptr;
         ctx->captureThread = std::thread(&DataCapture::captureLoop, this, ctx);
         ctx->displayThread = std::thread(&DataCapture::displayLoop, this, ctx);
         ctx->storageThread = std::thread(&DataCapture::storageLoop, this, ctx);
     }
 
-    _logger.info("DataCapture started with %zu devices", _devices.size());
-    // 启动 TacGlove 存储线程
     for (auto &ctxPtr : _tacGloves)
     {
         auto *ctx = ctxPtr.get();
         ctx->storageRunning = true;
-        ctx->writer = ctx->device ? ctx->device->makeWriter(_storage.basePath(), _logger) : nullptr;
+        {
+            std::lock_guard<std::mutex> lock(ctx->storageMutex);
+            ctx->writer.reset();
+        }
         ctx->storageThread = std::thread(&DataCapture::tacGloveStorageLoop, this, ctx);
     }
 
@@ -133,7 +126,7 @@ void DataCapture::stop()
             std::lock_guard<std::mutex> lock(ctx->storageMutex);
             ctx->storageRunning = false;
             std::queue<CaptureItem> empty;
-            ctx->storageQueue.swap(empty); // drop pending frames to accelerate shutdown
+            ctx->storageQueue.swap(empty);
         }
         ctx->storageCv.notify_all();
         {
@@ -145,10 +138,6 @@ void DataCapture::stop()
         ctx->displayCv.notify_all();
     }
 
-    for (auto &ctxPtr : _devices)
-    {
-        auto *ctx = ctxPtr.get();
-    // 停止 TacGlove 线程
     for (auto &ctxPtr : _tacGloves)
     {
         auto *ctx = ctxPtr.get();
@@ -164,7 +153,6 @@ void DataCapture::stop()
     for (auto &ctxPtr : _devices)
     {
         auto *ctx = ctxPtr.get();
-        // Close device first to interrupt any blocking capture calls
         if (ctx->device)
             ctx->device->close();
 
@@ -174,11 +162,11 @@ void DataCapture::stop()
             ctx->displayThread.join();
         if (ctx->storageThread.joinable())
             ctx->storageThread.join();
-        
+
+        std::lock_guard<std::mutex> lock(ctx->storageMutex);
         ctx->writer.reset();
     }
 
-    // 关闭 TacGlove 设备
     for (auto &ctxPtr : _tacGloves)
     {
         auto *ctx = ctxPtr.get();
@@ -186,6 +174,7 @@ void DataCapture::stop()
             ctx->storageThread.join();
         if (ctx->device)
             ctx->device->close();
+        std::lock_guard<std::mutex> lock(ctx->storageMutex);
         ctx->writer.reset();
     }
 }
@@ -195,27 +184,25 @@ void DataCapture::captureLoop(DeviceContext *ctx)
     while (_running.load())
     {
         FrameData frame = ctx->device->captureFrame();
-        if (!frame.hasImage())
-        const bool hasImage = !frame.image.empty();
-        // Allow frames with glove or vive data even if image is empty
+        const bool hasImage = frame.hasImage();
         if (!hasImage && !frame.gloveData.has_value() && !frame.viveData.has_value())
             continue;
         frame.cameraId = ctx->device->name();
+
         auto stats = ctx->stats;
         if (stats)
         {
             if (auto fps = stats->recordCapture())
                 _preview.updateCameraStats(frame.cameraId, *fps);
         }
+
         enqueueForDisplay(ctx, frame);
         if (_recording.load() && !_paused.load())
         {
             enqueueForStorage(ctx, frame);
-        }
-        if (_arucoTracker)
-            // 同步捕获 TacGlove 数据，使用相同的时间戳
             captureTacGloveFrame(frame.timestamp, frame.deviceTimestampMs);
         }
+
         if (_arucoTracker && hasImage)
             _arucoTracker->submit(frame);
     }
@@ -223,75 +210,71 @@ void DataCapture::captureLoop(DeviceContext *ctx)
 
 void DataCapture::startRecording(const std::string &captureName,
                                  const std::string &subject,
-                                 const std::string &basePath)
                                  const std::string &basePath,
                                  const std::unordered_set<std::string> &recordTypes)
 {
     if (!_running.load())
         return;
+
     for (auto &ctxPtr : _devices)
         ctxPtr->dropWarned = false;
+    for (auto &ctxPtr : _tacGloves)
+        ctxPtr->dropWarned = false;
+
     std::vector<CaptureMetadata> metas;
     metas.reserve(_devices.size());
     for (const auto &ctxPtr : _devices)
     {
         if (ctxPtr->device)
-            metas.push_back(ctxPtr->device->captureMetadata());
-    }
-    _storage.beginRecording(captureName, subject, basePath, metas);
-    for (auto &ctxPtr : _devices)
-    {
-        if (ctxPtr->device)
-            ctxPtr->writer = ctxPtr->device->makeWriter(_storage.basePath(), _logger);
-        if (ctxPtr->writer && ctxPtr->device && ctxPtr->stats)
         {
-            auto stats = ctxPtr->stats;
-            auto cameraId = ctxPtr->device->name();
-            ctxPtr->writer->setWriteCallback([this, stats, cameraId]() {
-                if (auto fps = stats->recordWrite())
-                    _preview.updateCameraStats(cameraId, *fps);
-            });
+            const bool shouldRecord = recordTypes.empty() || recordTypes.count(ctxPtr->type) > 0;
+            if (shouldRecord)
+                metas.push_back(ctxPtr->device->captureMetadata());
         }
     }
 
-    for (auto &ctxPtr : _tacGloves)
-        ctxPtr->dropWarned = false;
-    
-    std::vector<CaptureMetadata> metas;
-    // Only include metadata for devices we are actually recording
-    for (const auto &ctxPtr : _devices)
-    {
-        if (ctxPtr->device)
-        {
-            bool shouldRecord = recordTypes.empty() || recordTypes.count(ctxPtr->type);
-            if (shouldRecord) {
-                metas.push_back(ctxPtr->device->captureMetadata());
-            }
-        }
-    }
-    
     _storage.beginRecording(captureName, subject, basePath, metas);
-    
+
     for (auto &ctxPtr : _devices)
     {
-        if (ctxPtr->device)
+        if (!ctxPtr->device)
+            continue;
+
+        const bool shouldRecord = recordTypes.empty() || recordTypes.count(ctxPtr->type) > 0;
+        std::shared_ptr<FrameWriter> writer;
+        if (shouldRecord)
         {
-            std::lock_guard<std::mutex> lock(ctxPtr->storageMutex); // Protect writer assignment
-            bool shouldRecord = recordTypes.empty() || recordTypes.count(ctxPtr->type);
-            if (shouldRecord) {
-                ctxPtr->writer = ctxPtr->device->makeWriter(_storage.basePath(), _logger);
-            } else {
-                ctxPtr->writer = nullptr;
-                _logger.info("Skipping recording for device %s (type: %s)", ctxPtr->device->name().c_str(), ctxPtr->type.c_str());
+            writer = std::move(ctxPtr->device->makeWriter(_storage.basePath(), _logger));
+            if (writer && ctxPtr->stats)
+            {
+                auto stats = ctxPtr->stats;
+                auto cameraId = ctxPtr->device->name();
+                writer->setWriteCallback([this, stats, cameraId]() {
+                    if (auto fps = stats->recordWrite())
+                        _preview.updateCameraStats(cameraId, *fps);
+                });
             }
         }
+        else
+        {
+            _logger.info("Skipping recording for device %s (type: %s)",
+                         ctxPtr->device->name().c_str(), ctxPtr->type.c_str());
+        }
+
+        std::lock_guard<std::mutex> lock(ctxPtr->storageMutex);
+        ctxPtr->writer = std::move(writer);
     }
-    // 为 TacGlove 创建 writer
+
     for (auto &ctxPtr : _tacGloves)
     {
-        if (ctxPtr->device)
-            ctxPtr->writer = ctxPtr->device->makeWriter(_storage.basePath(), _logger);
+        if (!ctxPtr->device)
+            continue;
+        std::shared_ptr<TacGloveDualWriter> writer =
+            std::move(ctxPtr->device->makeWriter(_storage.basePath(), _logger));
+        std::lock_guard<std::mutex> lock(ctxPtr->storageMutex);
+        ctxPtr->writer = std::move(writer);
     }
+
     _recording = true;
     _paused = false;
     _logger.info("Recording started");
@@ -304,25 +287,15 @@ void DataCapture::stopRecording()
     _storage.endRecording();
     _logger.info("Recording stopped");
 
-    // 重置相机 writer（触发文件关闭）
     for (auto &ctxPtr : _devices)
     {
+        std::lock_guard<std::mutex> lock(ctxPtr->storageMutex);
         ctxPtr->writer.reset();
     }
 
-    // 重置 TacGlove writer（触发 finalize，写入 meta.json）
     for (auto &ctxPtr : _tacGloves)
     {
-        ctxPtr->writer.reset();
-    }
-
-    _storage.endRecording();
-    _logger.info("Recording stopped");
-    
-    // Clean up writers
-    for (auto &ctxPtr : _devices)
-    {
-        std::lock_guard<std::mutex> lock(ctxPtr->storageMutex); // Protect writer reset
+        std::lock_guard<std::mutex> lock(ctxPtr->storageMutex);
         ctxPtr->writer.reset();
     }
 }
@@ -346,8 +319,6 @@ void DataCapture::resumeRecording()
 void DataCapture::enqueueForStorage(DeviceContext *ctx, const FrameData &frame)
 {
     std::unique_lock<std::mutex> lock(ctx->storageMutex);
-    
-    // If no writer is configured (e.g. recording disabled for this device), skip queuing
     if (!ctx->writer)
         return;
 
@@ -390,6 +361,7 @@ void DataCapture::displayLoop(DeviceContext *ctx)
             item = std::move(ctx->displayQueue.front());
             ctx->displayQueue.pop();
         }
+
         if (_displayFpsLimit > 0.0)
         {
             const auto now = std::chrono::steady_clock::now();
@@ -400,6 +372,7 @@ void DataCapture::displayLoop(DeviceContext *ctx)
             }
             ctx->lastDisplay = now;
         }
+
         _preview.showFrame(item.frame);
         if (item.stats)
         {
@@ -414,7 +387,7 @@ void DataCapture::storageLoop(DeviceContext *ctx)
     while (true)
     {
         CaptureItem item;
-        std::shared_ptr<FrameWriter> currentWriter; // Keep writer alive during write operation
+        std::shared_ptr<FrameWriter> writer;
         {
             std::unique_lock<std::mutex> lock(ctx->storageMutex);
             ctx->storageCv.wait(lock, [ctx]() { return !ctx->storageQueue.empty() || !ctx->storageRunning; });
@@ -422,18 +395,10 @@ void DataCapture::storageLoop(DeviceContext *ctx)
                 break;
             item = std::move(ctx->storageQueue.front());
             ctx->storageQueue.pop();
+            writer = ctx->writer;
         }
 
-        if (ctx->writer)
-            ctx->writer->write(item.frame);
-    }
-}
-            
-            // Capture the writer shared_ptr while holding the lock
-            currentWriter = ctx->writer;
-        }
-
-        const bool writeOk = (currentWriter && currentWriter->write(item.frame));
+        const bool writeOk = (writer && writer->write(item.frame));
         if (writeOk && item.stats)
         {
             if (auto fps = item.stats->recordWrite())
@@ -441,10 +406,6 @@ void DataCapture::storageLoop(DeviceContext *ctx)
         }
     }
 }
-
-// ============================================================================
-// TacGlove 相关方法实现
-// ============================================================================
 
 void DataCapture::captureTacGloveFrame(const std::chrono::system_clock::time_point &timestamp,
                                        int64_t deviceTimestampMs)
@@ -486,6 +447,7 @@ void DataCapture::tacGloveStorageLoop(TacGloveContext *ctx)
     while (true)
     {
         TacGloveItem item;
+        std::shared_ptr<TacGloveDualWriter> writer;
         {
             std::unique_lock<std::mutex> lock(ctx->storageMutex);
             ctx->storageCv.wait(lock, [ctx]() {
@@ -495,12 +457,11 @@ void DataCapture::tacGloveStorageLoop(TacGloveContext *ctx)
                 break;
             item = std::move(ctx->storageQueue.front());
             ctx->storageQueue.pop();
+            writer = ctx->writer;
         }
 
-        if (ctx->writer)
-        {
-            ctx->writer->write(item.frame);
-        }
+        if (writer)
+            writer->write(item.frame);
     }
 }
 

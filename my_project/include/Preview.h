@@ -40,7 +40,6 @@ private:
     {
         QLabel *colorLabel{nullptr};
         QLabel *depthLabel{nullptr};
-        bool showDepth{false};
         QLabel *dataLabel{nullptr}; // For text-only devices
         bool showDepth{false};
         bool isTextOnly{false};

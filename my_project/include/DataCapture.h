@@ -7,9 +7,9 @@
 #include <queue>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <functional>
-#include <unordered_set>
 #include <chrono>
 
 #include "CameraInterface.h"
@@ -17,7 +17,6 @@
 #include "TacGlove.h"
 
 class ArucoTracker;
-
 class Preview;
 class DataStorage;
 class Logger;
@@ -32,7 +31,7 @@ struct TacGloveSpec
 {
     std::unique_ptr<TacGloveInterface> device;
     std::string deviceId;
-    TacGloveMode mode{TacGloveMode::Both};  // 手套模式（左手/右手/双手）
+    TacGloveMode mode{TacGloveMode::Both};
 };
 
 class DataCapture
@@ -44,7 +43,7 @@ public:
                 Preview &preview,
                 Logger &logger,
                 ArucoTracker *arucoTracker,
-                double displayFpsLimit);
+                double displayFpsLimit = 0.0);
     ~DataCapture();
 
     bool start();
@@ -52,7 +51,6 @@ public:
     bool isRunning() const { return _running.load(); }
     void startRecording(const std::string &captureName,
                         const std::string &subject,
-                        const std::string &basePath);
                         const std::string &basePath,
                         const std::unordered_set<std::string> &recordTypes = {});
     void stopRecording();
@@ -76,25 +74,23 @@ private:
         FrameData frame;
         std::shared_ptr<CameraStats> stats;
     };
+
     struct DisplayItem
     {
         FrameData frame;
         std::shared_ptr<CameraStats> stats;
     };
 
-    struct DeviceContext
-    {
-        std::unique_ptr<CameraInterface> device;
     struct TacGloveItem
     {
-        TacGloveDualFrameData frame;  // 双手数据帧
+        TacGloveDualFrameData frame;
     };
 
     struct TacGloveContext
     {
         std::unique_ptr<TacGloveInterface> device;
         std::thread storageThread;
-        std::unique_ptr<TacGloveDualWriter> writer;  // 双手数据写入器
+        std::shared_ptr<TacGloveDualWriter> writer;
         std::queue<TacGloveItem> storageQueue;
         std::condition_variable storageCv;
         std::mutex storageMutex;
@@ -110,7 +106,6 @@ private:
         std::thread captureThread;
         std::thread displayThread;
         std::thread storageThread;
-        std::unique_ptr<FrameWriter> writer;
         std::shared_ptr<FrameWriter> writer;
         std::queue<DisplayItem> displayQueue;
         std::queue<CaptureItem> storageQueue;
@@ -129,9 +124,6 @@ private:
     size_t _maxStorageQueue{200};
     size_t _maxDisplayQueue{100};
     std::vector<std::unique_ptr<TacGloveContext>> _tacGloves;
-    std::unordered_map<std::string, std::shared_ptr<CameraStats>> _stats;
-    size_t _maxStorageQueue{200};
-    size_t _maxDisplayQueue{100};
     size_t _maxTacGloveQueue{500};
     std::atomic<bool> _running{false};
     std::atomic<bool> _recording{false};

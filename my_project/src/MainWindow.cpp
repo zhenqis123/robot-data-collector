@@ -173,8 +173,8 @@ void MainWindow::updateControls()
     _endStepButton->setEnabled(recording);
     _retryButton->setEnabled(taskActive);
     _skipButton->setEnabled(taskActive);
-    _errorButton->setEnabled(taskActive);
-    _abortButton->setEnabled(taskActive);
+    if (_abortButton)
+        _abortButton->setEnabled(taskActive);
     
     // Aux controls: disable connect toggle while running
     _chkConnectGlove->setEnabled(!hasCapture);
@@ -1539,7 +1539,6 @@ void MainWindow::onOpenCameras()
         }
     }
 
-    _capture = std::make_unique<DataCapture>(std::move(devices),
     // 创建 TacGlove 设备（使用 Both 模式，单个实例同时采集左右手）
     std::vector<TacGloveSpec> tacGloves;
 
@@ -1638,9 +1637,6 @@ void MainWindow::onStartRecording()
         }
         _storage.setTaskSelection(_currentTask->sceneId, _currentTask->task.id,
                                   _currentTask->sourcePath, _currentTask->schemaVersion, "script");
-        auto info = gatherCaptureInfo();
-        _capture->startRecording(info.name, info.subject, info.path);
-
         // Build allowed record types based on checkboxes
         std::unordered_set<std::string> typesToRecord;
         // Always record base cameras (RealSense, RGB, Webcam)
@@ -1655,6 +1651,7 @@ void MainWindow::onStartRecording()
             typesToRecord.insert("ViveTracker");
         }
 
+        auto info = gatherCaptureInfo();
         _capture->startRecording(info.name, info.subject, info.path, typesToRecord);
         logAnnotation("start_recording");
         _statusLabel->setText(tr("录制中 / Recording..."));

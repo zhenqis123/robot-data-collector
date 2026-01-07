@@ -47,19 +47,6 @@
     {
       "type": "RealSense",
       "id": 0,
-<<<<<<< HEAD
-      "align_depth": false,
-      "color": {
-        "resolution": "1280X720",
-        "frame_rate": 30,
-        "bitrate_kbps": 12000
-      },
-      "depth": {
-        "resolution": "1280X720",
-        "frame_rate": 30,
-        "chunk_size": 8
-      }
-=======
       "serial": "017322074878", 
       "align_depth": false,
       "color": {
@@ -87,7 +74,6 @@
       "id": 4,
       "port": 6666,
       "target_fps": 60.0
->>>>>>> feature/tac-hand-devices
     }
   ],
   "aruco_targets": [

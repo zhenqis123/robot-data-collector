@@ -240,7 +240,7 @@ void ArucoTracker::submit(const FrameData &frame)
     }
     else
     {
-        job.image = frame.image ? frame.image->clone() : cv::Mat();
+        job.image = frame.image.clone();
     }
     _queue.push(std::move(job));
     _cv.notify_one();
