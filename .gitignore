@@ -45,6 +45,9 @@ qrc_*.cpp
 my_project/resources/logs/
 my_project/resources/config.json
 
+**__pycache__**
+post_process/handeye/handeye
+
 # External/optional components
 librealsense/
 index-tts-vllm.local-backup/

@@ -254,6 +254,19 @@ sudo ufw allow 6666/udp
 sudo ufw reload
 ```
 
+## python package (HAWOR finetune)
+
+安装hawor, 然后:
+
+```bash
+pip install "numpy<2.0" "pandas==2.2.3" opencv-python
+pip install "trimesh<4"
+pip install pyrealsense2
+pip install opencv-python==4.10.0.
+84
+L
+```
+
 将 libVDMocapSDK_DataRead.so 放到 my_project/resources/libVDMocapSDK_DataRead.so
 
 ## Git 使用与协作
