@@ -17,6 +17,7 @@
 *.la
 *.a
 *.so
+!libVDMocapSDK_DataRead.so
 *.dylib
 *.dll
 *.lib
