@@ -64,3 +64,6 @@ data_new/
 outputs/
 tracking_results/
 third_party/
+rsync.sh
+zip.sh
+test_opencv.sh
