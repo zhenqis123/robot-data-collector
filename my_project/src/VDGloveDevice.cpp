@@ -107,6 +107,7 @@ private:
 };
 
 class VDGloveDevice : public VDGloveInterface {
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
     std::chrono::system_clock::time_point _lastPacketTime;
     bool _is_connected = false;

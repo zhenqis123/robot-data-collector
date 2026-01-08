@@ -17,8 +17,10 @@
 
 class Logger;
 
+
 struct FrameData
 {
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     cv::Mat image;
     cv::Mat depth;
     std::shared_ptr<void> imageOwner;
