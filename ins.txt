@@ -1,0 +1,50 @@
+你可以将以下内容保存为 .txt 文件，或者直接复制粘贴给你的 Code CLI 助手。这段内容经过了结构化处理，能够让 AI 快速定位代码并生成修复方案。
+
+Bug Report & Refactor Task: Multithreaded Heap-use-after-free in Qt
+
+1. Issue Context
+
+Error: AddressSanitizer: heap-use-after-free
+
+Target Process: DataCollectorApp
+
+Core Cause: A worker thread (T89) is accessing a QString internal data block while the GUI thread (T0) is freeing it during a QLabel::setText operation. This is caused by Qt's Implicit Sharing mechanism being triggered across different threads without synchronization.
+
+2. ASan Stack Trace Summary
+
+READ (Crash site): src/Preview.cpp:341 in Preview::renderInfo (Worker Thread).
+
+Call Chain: DataCapture::storageLoop -> Preview::updateCameraStats -> Preview::renderInfo.
+
+FREED (Allocation/Deallocation site): src/Preview.cpp:345 in QLabel::setText (GUI Thread).
+
+Call Chain: QCoreApplication::exec -> QObject::event -> operator() (Lambda/Slot) -> QLabel::setText.
+
+3. Specific Code to Inspect File: home/data/robot-data-collector/my_project/src/Preview.cpp Lines: ~340 to 350
+
+4. Refactoring Requirements The code currently attempts to update the UI directly or via a shared QString reference from a background thread (DataCapture::storageLoop).
+
+Please implement one of the following fixes:
+
+Preferred (Signal/Slot):
+
+Modify Preview class to emit a signal with the QString data.
+
+Connect the signal to the QLabel::setText slot using Qt::QueuedConnection in the MainWindow or Preview constructor.
+
+Alternative (InvokeMethod):
+
+Wrap the setText call inside QMetaObject::invokeMethod using a lambda with Qt::QueuedConnection to ensure the string is copied and the UI call is marshaled to the GUI thread.
+
+Example Fix Pattern (for AI reference):
+
+C++
+
+// Change this (unsafe):
+// myLabel->setText(someString); 
+
+// To this (safe):
+QMetaObject::invokeMethod(myLabel, [myLabel, someString](){
+    myLabel->setText(someString);
+}, Qt::QueuedConnection);
+5. Verification Instruction After applying the fix, the AI should ensure that no member variables of Preview or UI components are directly accessed/modified in DataCapture::storageLoop without thread-safe wrappers.
