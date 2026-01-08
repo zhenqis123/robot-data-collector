@@ -8,6 +8,24 @@ import transforms3d as tfs
 import open3d as o3d
 from scipy.spatial.transform import Rotation # 用于做旋转的平均
 
+def estimate_pose_single_markers(corners, marker_size, intr_matrix, intr_coeffs):
+    marker_points = np.array([
+        [-marker_size / 2, marker_size / 2, 0],
+        [marker_size / 2, marker_size / 2, 0],
+        [marker_size / 2, -marker_size / 2, 0],
+        [-marker_size / 2, -marker_size / 2, 0]
+    ], dtype=np.float32)
+
+    rvecs = []
+    tvecs = []
+    
+    for c in corners:
+        _, r, t = cv2.solvePnP(marker_points, c, intr_matrix, intr_coeffs, flags=cv2.SOLVEPNP_IPPE_SQUARE)
+        rvecs.append(r)
+        tvecs.append(t)
+    
+    return np.array(rvecs), np.array(tvecs)
+
 #################### Realsense & Detection #############
 
 CAMERA_IDS = ['239722072965', '247122073084', '243522072934','247122073147','017322074878']
@@ -79,7 +97,7 @@ def get_realsense_mark(detector, rgb, intr_matrix, intr_coeffs):
     #print(corners)
     if len(corners)==0: # not detected
         return None
-    rvec, tvec, markerPoints = aruco.estimatePoseSingleMarkers(corners, 0.1, intr_matrix, intr_coeffs)
+    rvec, tvec = estimate_pose_single_markers(corners, 0.1, intr_matrix, intr_coeffs)
     #print(rvec, tvec, markerPoints)
     for i in range(rvec.shape[0]):
         aruco.drawDetectedMarkers(rgb, corners)
@@ -121,7 +139,7 @@ def get_aruco_pose_in_cam(detector, rgb, intr_matrix, intr_coeffs):
         print("警告: 检测到多于一个Aruco码，请确保视野中只有一个。")
         return None, rgb
         
-    rvec, tvec, markerPoints = aruco.estimatePoseSingleMarkers(corners, 0.1, intr_matrix, intr_coeffs) # 0.1是marker的边长(米)
+    rvec, tvec = estimate_pose_single_markers(corners, 0.1, intr_matrix, intr_coeffs) # 0.1是marker的边长(米)
     
     # 可视化
     aruco.drawDetectedMarkers(rgb, corners, ids)

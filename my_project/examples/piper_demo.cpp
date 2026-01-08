@@ -11,7 +11,9 @@ int main(int argc, char **argv)
 #ifdef PIPER_VOICE_ONNX
     std::string voiceOnnx = PIPER_VOICE_ONNX;
 #else
-    std::string voiceOnnx = "/home/xiziheng/develop/data_collector/piper1-gpl/libpiper/install/share/piper/en_US-amy-low.onnx";
+    // Default relative path or check environment
+    std::string voiceOnnx = "piper1-gpl/libpiper/install/share/piper/en_US-amy-low.onnx";
+    if (auto p = std::getenv("PIPER_VOICE_PATH")) voiceOnnx = p;
 #endif
 #ifdef PIPER_VOICE_CONFIG
     std::string voiceConfig = PIPER_VOICE_CONFIG;
@@ -21,7 +23,8 @@ int main(int argc, char **argv)
 #ifdef PIPER_ESPEAK_DATA
     std::string espeakData = PIPER_ESPEAK_DATA;
 #else
-    std::string espeakData = "/home/xiziheng/develop/data_collector/piper1-gpl/libpiper/install/espeak-ng-data";
+    std::string espeakData = "piper1-gpl/libpiper/install/espeak-ng-data";
+    if (auto p = std::getenv("PIPER_ESPEAK_DATA")) espeakData = p;
 #endif
 
     if (argc > 1)

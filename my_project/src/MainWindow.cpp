@@ -473,6 +473,7 @@ QGroupBox *MainWindow::createCaptureControlGroup()
     _endStepButton = new QPushButton(tr("结束步骤 / End Step"));
     _skipButton = new QPushButton(tr("跳过 / Skip"));
     _retryButton = new QPushButton(tr("重试 / Retry"));
+    _abortButton = new QPushButton(tr("中止 / Abort"));
     _keyframeButton = new QPushButton(tr("关键帧 / Keyframe"));
     grid->addWidget(_startCaptureButton, 0, 0);
     grid->addWidget(_stopCaptureButton, 0, 1);
@@ -482,7 +483,8 @@ QGroupBox *MainWindow::createCaptureControlGroup()
     grid->addWidget(_endStepButton, 2, 1);
     grid->addWidget(_retryButton, 3, 0);
     grid->addWidget(_skipButton, 3, 1);
-    grid->addWidget(_keyframeButton, 4, 0, 1, 2);
+    grid->addWidget(_abortButton, 4, 0, 1, 2);
+    grid->addWidget(_keyframeButton, 5, 0, 1, 2);
     return box;
 }
 

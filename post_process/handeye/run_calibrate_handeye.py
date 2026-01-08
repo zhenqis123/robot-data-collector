@@ -1,22 +1,71 @@
 import argparse
 import os
-import os
-from pathlib import Path
 import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from PathConfig import PROJECT_ROOT, TACTASK_DIR, TELEOP_DIR, TACDATA_DIR
-from handeye_utils import *
-from teleop.mocap.vive_data_receiver import VIVEDataReceiver
+import socket
+import struct
+import threading
+import time
+import numpy as np
+import cv2
 import pyrealsense2 as rs
+from pathlib import Path
+from handeye_utils import *
 
-# robot = Arm(RM65, '192.168.1.19')
-# for t in range(100):
-#     res, joint_now, pose, arm_err, sys_err = robot.Get_Current_Arm_State()
-#     print(res, pose)
-#     time.sleep(0.5)
-# sys.exit(0)
+class VIVEDataReceiver:
+    def __init__(self, port=6666, num_floats=36):
+        self.port = port
+        self.num_floats = num_floats
+        # double(8) + num_floats * float(4)
+        self.packet_size = 8 + num_floats * 4  
+        self.unpack_fmt = f'<d{num_floats}f'
+        self.lock = threading.Lock()
+        self.latest_data = None
+        self.running = False
+        self.sock = None
+        self.thread = None
+
+    def start(self):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            self.sock.bind(('0.0.0.0', self.port))
+            self.sock.settimeout(0.5) # 500ms timeout
+            self.running = True
+            self.thread = threading.Thread(target=self._receive_loop, daemon=True)
+            self.thread.start()
+            print(f"[VIVEDataReceiver] Listening on port {self.port}")
+        except Exception as e:
+            print(f"[VIVEDataReceiver] Failed to start: {e}")
+
+    def stop(self):
+        self.running = False
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=1.0)
+        if self.sock:
+            self.sock.close()
+        print("[VIVEDataReceiver] Stopped")
+
+    def _receive_loop(self):
+        while self.running:
+            try:
+                # Buffer size > 152 bytes
+                data, _ = self.sock.recvfrom(2048) 
+                if len(data) == self.packet_size:
+                    unpacked = struct.unpack(self.unpack_fmt, data)
+                    # unpacked[0] is timestamp, [1:] are floats
+                    with self.lock:
+                        self.latest_data = np.array(unpacked[1:])
+            except socket.timeout:
+                continue
+            except Exception:
+                pass
+
+    def get_latest_data(self):
+        with self.lock:
+            if self.latest_data is None:
+                return None
+            return self.latest_data.copy()
+
 
 def wrapper_trans(trans):
     # return C_rot @ trans
@@ -29,10 +78,11 @@ def wrapper_rot(rot):
 def VIVE_Station_Calibration():
     parser = argparse.ArgumentParser(description="相机与定位基站的标定与测试程序") 
     parser.add_argument('--camera_idx', default=4, type=int, help='要使用的相机在 CAMERA_IDS 列表中的索引')
+    parser.add_argument('--tracker_id', default=0, type=int, help='使用的追踪器ID (0-2), 默认为1(第二个)')
     args = parser.parse_args()
     
     # 假设 VIVEDataReceiver 已经定义并可用
-    receiver = VIVEDataReceiver(port=9999, num_floats=36)
+    receiver = VIVEDataReceiver(port=6666, num_floats=36)
     receiver.start()
 
     # ### 1. 初始化 ###
@@ -102,7 +152,10 @@ def VIVE_Station_Calibration():
                 print("\n[错误] 未能同时检测到标定板和追踪器! 请调整后重试。")
                 continue
             
-            tracker_pose_data = vive_data[12:24]
+            # tracker_pose_data = vive_data[12:24]
+            start_idx = args.tracker_id * 12
+            tracker_pose_data = vive_data[start_idx : start_idx + 12]
+            
             if not (tracker_pose_data[0] == 0 and tracker_pose_data[1] == 0 and tracker_pose_data[2] == 0):
                 board_poses_in_cam.append(board_pose_cam)
                 tracker_poses_in_station.append(tracker_pose_data)
@@ -151,6 +204,29 @@ def VIVE_Station_Calibration():
             calib_data['RT_cam2station'] = RT_cam2station
             calib_data['RT_board2tracker'] = RT_board2tracker
             test_mode = True
+
+        if test_mode and 'RT_cam2station' in calib_data:
+            # 实时验证
+            RT = calib_data['RT_cam2station']
+            RT_inv = np.linalg.inv(RT)
+            
+            # 使用 args.tracker_id
+            start_idx = args.tracker_id * 12
+            tracker_pose_data = vive_data[start_idx : start_idx + 12]
+            
+            if not (tracker_pose_data[0] == 0 and tracker_pose_data[1] == 0 and tracker_pose_data[2] == 0):
+                T_tracker2station = wrapper_trans(np.array(tracker_pose_data[0:3]).reshape(3, 1))
+                R_tracker2station = wrapper_rot(np.array(tracker_pose_data[3:12]).reshape(3, 3))
+                RT_tracker2station = np.eye(4)
+                RT_tracker2station[:3, :3] = R_tracker2station
+                RT_tracker2station[:3, 3] = T_tracker2station.flatten()
+                
+                RT_cam2tracker = RT_inv @ RT_tracker2station
+                
+                R_vec, _ = cv2.Rodrigues(RT_cam2tracker[:3, :3])
+                T_vec = RT_cam2tracker[:3, 3]
+                
+                cv2.drawFrameAxes(visualized_rgb, intr_matrix, intr_coeffs, R_vec, T_vec, 0.05) # 0.05米
 
         # 始终显示图像
         cv2.imshow(f'Camera View (SN: {cam_serial})', visualized_rgb)
@@ -257,6 +333,7 @@ def One_Calibration():
      # 解析命令行参数
     parse = argparse.ArgumentParser() 
     parse.add_argument('--camera', default=4, type=int, help='camera id')
+    parse.add_argument('--tracker_id', default=1, type=int, help='tracker id (0-2)')
     # 左臂
     parse.add_argument('--arm_ip', default='192.168.101.21', type=str, help='arm ip')
     # #右臂
@@ -269,7 +346,7 @@ def One_Calibration():
     pipeline, align = get_rs_pipeline(args.camera)
     aruco_detector = get_aruco_detector()
 
-    receiver = VIVEDataReceiver(port=9999, num_floats=36)
+    receiver = VIVEDataReceiver(port=6666, num_floats=36)
     receiver.start()
 
     hands =[]
@@ -291,7 +368,13 @@ def One_Calibration():
                 print("board not detected!!!")
                 continue
             vive_data = receiver.get_latest_data()
-            tracker_pose_data = vive_data[12:24]
+            if vive_data is None:
+                print("VIVE data not received!!!")
+                continue
+            # tracker_pose_data = vive_data[12:24]
+            start_idx = args.tracker_id * 12
+            tracker_pose_data = vive_data[start_idx : start_idx + 12]
+
             if not (tracker_pose_data[0] == 0 and tracker_pose_data[1] == 0 and tracker_pose_data[2] == 0):
                 cameras.append(tvec_rvec)
                 hands.append(tracker_pose_data)
@@ -364,49 +447,80 @@ def One_Calibration():
 def test_calibration():
     """
     加载手眼标定矩阵，并在实时相机图像中渲染追踪器的坐标轴。
-
-    Args:
-        camera_id (int): 要使用的相机ID。
-        calibration_file (str): 保存的RT_cam2base变换矩阵文件路径 (.npy)。
     """
+    parser = argparse.ArgumentParser(description="手眼标定测试程序")
+    parser.add_argument('--camera_idx', default=4, type=int, help='要使用的相机在 CAMERA_IDS 列表中的索引')
+    parser.add_argument('--tracker_id', default=0, type=int, help='使用的追踪器ID (0-2)')
+    args = parser.parse_args()
+
     # --- 1. 初始化 ---
-    camera_id = 4
-    calibration_file = "./handeye/cam2station_test_017322074878.npy"
-    print("正在加载标定文件:", os.path.abspath(calibration_file))
-    if not os.path.exists(calibration_file):
-        print(f"[错误] 标定文件未找到: {calibration_file}")
+    camera_id = args.camera_idx
+    tracker_id = args.tracker_id
+    cam_serial = CAMERA_IDS[camera_id]
+    
+    npz_file = f"./handeye/cam2station_calib_{cam_serial}.npz"
+    npy_file = f"./handeye/cam2station_test_{cam_serial}.npy"
+    
+    RT_cam2station = None
+    is_mm = False # 标记单位是否为毫米
+
+    if os.path.exists(npz_file):
+        print(f"Loading npz calibration file: {os.path.abspath(npz_file)}")
+        data = np.load(npz_file)
+        RT_cam2station = data['RT_cam2station']
+        # .npz from VIVE_Station_Calibration is usually in Meters
+        is_mm = False 
+    elif os.path.exists(npy_file):
+        print(f"Loading npy calibration file: {os.path.abspath(npy_file)}")
+        RT_cam2station = np.load(npy_file)
+        # .npy from One_Calibration (if that's the source) might be in MM
+        # But One_Calibration file name is cam2station_test_... check logic
+        # One_Calibration saves cam2station_test_{}.npy WITH *1000. So it is MM.
+        is_mm = True
+    else:
+        print(f"[Error] No calibration file found for camera {cam_serial}")
+        print(f"Checked: {npz_file}")
+        print(f"Checked: {npy_file}")
         return
-    RT_cam2base = np.load(calibration_file)
-    RT_cam2base = np.linalg.inv(RT_cam2base)
-    print("RT_cam2base 加载成功:\n", RT_cam2base)
+
+    # RT_cam2station usually represents T_station_cam (Points in Cam -> Points in Station)
+    # We want T_cam_station (Points in Station -> Points in Cam) to project tracker points to cam.
+    # T_cam_tracker = T_cam_station * T_station_tracker
+    RT_cam2station_inv = np.linalg.inv(RT_cam2station)
+    print("RT_cam2station (loaded):\n", RT_cam2station)
+    print("RT_cam2station_inv (used for projection):\n", RT_cam2station_inv)
 
     # 初始化RealSense相机
-    # 注意：请确保这些辅助函数可用
     check_rs_devices()
     pipeline, align = get_rs_pipeline(camera_id)
 
     # 初始化VIVE追踪器数据接收器
-    receiver = VIVEDataReceiver(port=9999, num_floats=36)
+    receiver = VIVEDataReceiver(port=6666, num_floats=36)
     receiver.start()
 
-    # 获取一次相机内参，假设它们在流式传输期间是恒定的
+    # 获取一次相机内参
     _, _, intr_matrix, intr_coeffs = get_aligned_images(pipeline, align)
     if intr_matrix is None:
-        print("[错误] 无法获取相机内参。")
+        print("[Error] Cannot get camera intrinsics.")
         pipeline.stop()
         return
 
-    # 定义要在追踪器上绘制的坐标轴（3D模型点）
-    # 长度单位应与标定时使用的单位一致（例如，毫米）
-    axis_length = 50.0  # 50mm = 5cm
+    # 定义坐标轴长度
+    if is_mm:
+        axis_length = 50.0 # 50mm
+        print("Assuming calibration unit: MM")
+    else:
+        axis_length = 0.05 # 50mm in Meters
+        print("Assuming calibration unit: Meters")
+
     axis_points = np.float32([
-        [0, 0, 0],         # 原点
-        [axis_length, 0, 0], # X轴
-        [0, axis_length, 0], # Y轴
-        [0, 0, axis_length]  # Z轴
+        [0, 0, 0],         # Origin
+        [axis_length, 0, 0], # X
+        [0, axis_length, 0], # Y
+        [0, 0, axis_length]  # Z
     ]).reshape(-1, 3)
 
-    print("\n测试开始。按 'q' 或 ESC 键退出。")
+    print("\nTest started. Press 'q' to exit.")
 
     # --- 2. 主循环 ---
     while True:
@@ -417,55 +531,54 @@ def test_calibration():
 
         # 获取最新的VIVE追踪器数据
         vive_data = receiver.get_latest_data()
-        tracker_pose_data = vive_data[12:24]
+        if vive_data is None:
+            continue
+        
+        start_idx = tracker_id * 12
+        tracker_pose_data = vive_data[start_idx : start_idx + 12]
         
         # 检查追踪器数据是否有效
         if not (tracker_pose_data[0] == 0 and tracker_pose_data[1] == 0 and tracker_pose_data[2] == 0):
-            # --- 3. 核心变换逻辑 ---
-            # a. 从VIVE数据构建"追踪器到基座"的4x4变换矩阵 (RT_tracker2base)
-            T_tracker2base = np.array(tracker_pose_data[0:3]) * 1000  # 确保单位是毫米
-            R_tracker2base = np.array(tracker_pose_data[3:12]).reshape(3, 3)
-            RT_tracker2base = tfs.affines.compose(T_tracker2base, R_tracker2base, [1, 1, 1])
+            # a. 构建 T_station_tracker (Tracker in Station frame)
+            # VIVE data is typically in Meters.
+            t_tracker = np.array(tracker_pose_data[0:3])
+            
+            if is_mm:
+                t_tracker = t_tracker * 1000.0 # Convert Meters to MM if calibration is in MM
+            
+            R_tracker = np.array(tracker_pose_data[3:12]).reshape(3, 3)
+            T_station_tracker = tfs.affines.compose(t_tracker, R_tracker, [1, 1, 1])
 
-            # b. 计算"追踪器到相机"的变换矩阵
-            #    P_cam = RT_cam2base * P_base
-            #    P_base = RT_tracker2base * P_tracker
-            #    => P_cam = RT_cam2base * RT_tracker2base * P_tracker
-            RT_cam2tracker = RT_cam2base @ RT_tracker2base
+            # b. 计算 T_cam_tracker = T_cam_station * T_station_tracker
+            RT_cam2tracker = RT_cam2station_inv @ T_station_tracker
             
-            # c. 从4x4矩阵中提取旋转向量和平移向量，以供cv2.projectPoints使用
+            # c. 提取旋转和平移
             R_cam2tracker = RT_cam2tracker[:3, :3]
-            
             t_cam2tracker = RT_cam2tracker[:3, 3]
 
-            print(t_cam2tracker)
+            # print(t_cam2tracker)
             rvec, _ = cv2.Rodrigues(R_cam2tracker)
 
             # --- 4. 投影和渲染 ---
-            # 将3D坐标轴点投影到2D图像平面
             img_points, _ = cv2.projectPoints(axis_points, rvec, t_cam2tracker, intr_matrix, intr_coeffs)
-            
-            # 将投影点坐标转换为整数
             img_points = np.int32(img_points).reshape(-1, 2)
             
-            # 在图像上绘制坐标轴
-            # BGR color: X-Red, Y-Green, Z-Blue
             origin_pt = tuple(img_points[0])
-            # print(origin_pt)
-            cv2.drawFrameAxes(rgb, intr_matrix, intr_coeffs, R_cam2tracker, t_cam2tracker, 0.05) # 绘制坐标轴
+            cv2.drawFrameAxes(rgb, intr_matrix, intr_coeffs, R_cam2tracker, t_cam2tracker, axis_length)
 
-            cv2.line(rgb, origin_pt, tuple(img_points[1]), (0, 0, 255), 3) # X轴 (红色)
-            cv2.line(rgb, origin_pt, tuple(img_points[2]), (0, 255, 0), 3) # Y轴 (绿色)
-            cv2.line(rgb, origin_pt, tuple(img_points[3]), (255, 0, 0), 3) # Z轴 (蓝色)
+            # Draw lines manually if needed (drawFrameAxes usually sufficient, but keeping lines for visibility)
+            if img_points.shape[0] >= 4:
+                cv2.line(rgb, origin_pt, tuple(img_points[1]), (0, 0, 255), 3) # X
+                cv2.line(rgb, origin_pt, tuple(img_points[2]), (0, 255, 0), 3) # Y
+                cv2.line(rgb, origin_pt, tuple(img_points[3]), (255, 0, 0), 3) # Z
 
-        # 显示结果图像
         cv2.imshow('Calibration Test - Tracker Axes', rgb)
         key = cv2.waitKey(1)
         if key & 0xFF == ord('q') or key == 27:
             break
             
     # --- 5. 清理 ---
-    print("\n测试结束。")
+    print("\nTest finished.")
     pipeline.stop()
     receiver.stop()
     cv2.destroyAllWindows()
@@ -473,8 +586,14 @@ def test_calibration():
 
 
 if __name__ == "__main__":
-    # VIVE_Station_Calibration()
-    # RM_ARM_Calibration()
-    # temp_test_Calibration()
-    One_Calibration()
+    # 按照需求取消注释所需的函数
+    
+    # 1. 执行标定（默认推荐）
+    VIVE_Station_Calibration()
+    
+    # 2. 仅测试（需要先有标定文件）
     # test_calibration()
+    
+    # 3. 旧版/机械臂标定（按需）
+    # One_Calibration()
+    # RM_ARM_Calibration()
