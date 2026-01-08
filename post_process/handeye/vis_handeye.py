@@ -53,10 +53,15 @@ if __name__ == "__main__":
     # load_path = 'handeye/cam2base_{}.npy'.format(CAMERA_IDS[args.camera])
     # load_path = 'handeye/cam2station_017322074878.npy'
     # load_path = "handeye/cam2station_calib_017322074878.npz"
-    load_path = "handeye/cam2station_test_017322074878.npy"
+    load_path = "handeye/cam2station_calib_017322074878.npz"
     # load_path = "handeye/cam2right_base_017322074878.npy"
     # RT_cam2base = np.load(load_path)["RT_cam2station"]
-    RT_cam2base = np.load(load_path)
+    raw_data = np.load(load_path)
+    if load_path.endswith('.npz'):
+        RT_cam2base = raw_data['RT_cam2station']
+    else:
+        RT_cam2base = raw_data
+
     if 'base' in load_path or 'test' in load_path:
         RT_cam2base[0:3, 3] /= 1000.  # mm to m
     # else:

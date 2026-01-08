@@ -46,7 +46,7 @@ TEST(DataCaptureTest, StartsAndStopsThreads)
 
     std::vector<TacGloveSpec> tacGloves; // 空的 TacGlove 列表
 
-    DataCapture capture(std::move(devices), std::move(tacGloves), storage, preview, logger, nullptr);
+    DataCapture capture(std::move(devices), std::move(tacGloves), storage, preview, logger, nullptr, 30.0);
     EXPECT_FALSE(capture.isRunning());
     EXPECT_TRUE(capture.start());
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -99,7 +99,7 @@ TEST(DataCaptureTest, TacGloveDataSavedDuringRecording)
     tacGloves.push_back(std::move(tacSpec));
 
     // 创建 DataCapture
-    DataCapture capture(std::move(devices), std::move(tacGloves), storage, preview, logger, nullptr);
+    DataCapture capture(std::move(devices), std::move(tacGloves), storage, preview, logger, nullptr, 30.0);
 
     // 启动采集
     ASSERT_TRUE(capture.start());

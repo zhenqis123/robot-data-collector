@@ -100,6 +100,12 @@ python3 test_index_tts.py
 在仓库根目录执行 Debug 构建：
 
 ```bash
+rm -rf my_project/build
+export PATH=$(echo $PATH | tr ':' '\n' | grep -v "anaconda" | tr '\n' ':' | sed 's/:$//')
+unset CONDA_PREFIX
+unset CONDA_DEFAULT_ENV
+
+
 cmake -S my_project -B my_project/build -DCMAKE_BUILD_TYPE=Debug
 cmake --build my_project/build -j
 ./my_project/build/DataCollectorApp
@@ -248,6 +254,19 @@ basePath/
 sudo ufw allow 9999/udp
 sudo ufw allow 6666/udp
 sudo ufw reload
+```
+
+## python package (HAWOR finetune)
+
+安装hawor, 然后:
+
+```bash
+pip install "numpy<2.0" "pandas==2.2.3" opencv-python
+pip install "trimesh<4"
+pip install pyrealsense2
+pip install opencv-python==4.10.0.
+84
+L
 ```
 
 将 libVDMocapSDK_DataRead.so 放到 my_project/resources/libVDMocapSDK_DataRead.so
