@@ -95,18 +95,22 @@ public:
                          _deviceId.c_str(), tactileDir.string().c_str());
         }
 
-        // 写入二进制数据（直接写入 137 个 float）
-        _binStream.write(reinterpret_cast<const char *>(frame.data.data()),
-                         frame.data.size() * sizeof(float));
-
-        // 写入 CSV 数据（一行 137 个值，逗号分隔）
-        for (size_t i = 0; i < frame.data.size(); ++i)
+        // 仅当数据有效（非缺失）时才写入矩阵文件
+        if (!frame.isMissing)
         {
-            if (i > 0)
-                _csvStream << ",";
-            _csvStream << std::fixed << std::setprecision(6) << frame.data[i];
+            // 写入二进制数据（直接写入 137 个 float）
+            _binStream.write(reinterpret_cast<const char *>(frame.data.data()),
+                             frame.data.size() * sizeof(float));
+
+            // 写入 CSV 数据（一行 137 个值，逗号分隔）
+            for (size_t i = 0; i < frame.data.size(); ++i)
+            {
+                if (i > 0)
+                    _csvStream << ",";
+                _csvStream << std::fixed << std::setprecision(6) << frame.data[i];
+            }
+            _csvStream << "\n";
         }
-        _csvStream << "\n";
 
         // 写入时间戳
         if (_tsStream.is_open())
@@ -161,10 +165,13 @@ public:
             metaStream << "  \"num_frames\": " << _frameCount << ",\n";
             metaStream << "  \"missing_frames\": " << _missingCount << ",\n";
             metaStream << "  \"valid_frames\": " << (_frameCount - _missingCount) << ",\n";
+            metaStream << "  \"full_sequence_length\": " << _frameCount << ",\n";
             metaStream << "  \"vector_dimension\": " << SimulatedTacGlove::kVectorDimension << ",\n";
             metaStream << "  \"missing_value\": " << SimulatedTacGlove::kMissingValue << ",\n";
-            metaStream << "  \"data_shape\": [" << _frameCount << ", "
+            // 数据形状改为 [valid_frames, dimension]，因为只存储有效帧
+            metaStream << "  \"data_shape\": [" << (_frameCount - _missingCount) << ", "
                        << SimulatedTacGlove::kVectorDimension << "],\n";
+            metaStream << "  \"is_sparse\": true,\n";
             metaStream << "  \"binary_format\": \"float32_le\",\n";
             metaStream << "  \"files\": {\n";
             metaStream << "    \"binary\": \"tactile_data.bin\",\n";
