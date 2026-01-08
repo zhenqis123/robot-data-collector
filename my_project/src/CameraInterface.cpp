@@ -1001,8 +1001,8 @@ private:
                                 static_cast<hsize_t>(height),
                                 static_cast<hsize_t>(width)};
         H5Pset_chunk(props, 3, chunkDims);
-        H5Pset_shuffle(props);
-        H5Pset_deflate(props, 1);
+        // H5Pset_shuffle(props);
+        // H5Pset_deflate(props, 1);
 
         _h5Dataset = H5Dcreate2(_h5File, "/depth", H5T_NATIVE_UINT16, dataspace, H5P_DEFAULT, props, H5P_DEFAULT);
         H5Pclose(props);
