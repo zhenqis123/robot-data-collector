@@ -14,6 +14,7 @@ constexpr int LENGTH_HAND = 20;
 
 // 为了防止编译器字节对齐差异，强制 1 字节对齐（视 SDK 编译选项而定，通常 ctypes 默认对齐，但在网络传输结构体中常紧凑）
 // 这里假设 SDK 是标准对齐，若数据错乱可尝试 #pragma pack(1)
+#pragma pack(push, 1)
 struct MocapData {
     bool isUpdate;
     unsigned int frameIndex;
@@ -55,8 +56,10 @@ struct MocapData {
     int gestureResultL;
     int gestureResultR;
 };
+#pragma pack(pop)
 
 struct HandData {
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     bool detected = false;
     std::vector<Eigen::Vector3f> keypoints; // 21 points (MANO)
     Eigen::Matrix3f wrist_rotation;
@@ -65,6 +68,7 @@ struct HandData {
 };
 
 struct VDGloveFrameData {
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     HandData left_hand;
     HandData right_hand;
     std::chrono::system_clock::time_point timestamp;
@@ -72,7 +76,7 @@ struct VDGloveFrameData {
 };
 
 struct VDGloveConfig : public CameraConfig {
-    std::string server_ip = "192.168.20.240"; // 对应 UDP 发送请求的目标
+    std::string server_ip = "192.168.20.157"; // 对应 UDP 发送请求的目标
     int server_port = 9998;
     int local_port = 9999;                    // 对应 UdpOpen 的端口
     int device_index = 0;                     // SDK 实例索引
