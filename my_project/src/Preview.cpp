@@ -22,7 +22,7 @@ namespace
 std::unique_ptr<QLabel> makeDisplayLabel()
 {
     auto label = std::make_unique<QLabel>();
-    label->setMinimumSize(320, 180);
+    label->setMinimumSize(640, 360);
     label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
     label->setStyleSheet(
         "background-color: #222; color: #fff; border: 1px solid #444;"

@@ -751,40 +751,95 @@ private:
             depthMat.convertTo(depthMat, CV_16U);
         }
 
-        const hsize_t newDims[3] = {static_cast<hsize_t>(_depthIndex + 1),
-                                    static_cast<hsize_t>(_depthHeight),
-                                    static_cast<hsize_t>(_depthWidth)};
-        if (_depthIndex >= _depthAllocSize)
+        if (_depthChunkSizeUsed <= 1)
+            return writeDepthBatch(depthMat.data, 1);
+
+        if (!appendDepthToBuffer(depthMat))
+            return false;
+        if (_depthBuffered < static_cast<size_t>(_depthChunkSizeUsed))
+            return true;
+
+        const bool ok = writeDepthBatch(_depthChunkBuffer.data(), _depthBuffered);
+        _depthBuffered = 0;
+        return ok;
+    }
+
+    bool appendDepthToBuffer(const cv::Mat &depthMat)
+    {
+        if (_depthFramePixels == 0 || _depthChunkBuffer.empty())
+            return false;
+        const size_t frameBytes = _depthFramePixels * sizeof(uint16_t);
+        uint16_t *dest = _depthChunkBuffer.data() + (_depthBuffered * _depthFramePixels);
+        if (depthMat.isContinuous())
         {
-            const uint64_t target = _depthAllocSize + _depthExtendStep;
-            const hsize_t extendDims[3] = {static_cast<hsize_t>(target),
-                                           static_cast<hsize_t>(_depthHeight),
-                                           static_cast<hsize_t>(_depthWidth)};
-            if (H5Dset_extent(_h5Dataset, extendDims) < 0)
-                return false;
-            _depthAllocSize = target;
+            std::memcpy(dest, depthMat.data, frameBytes);
         }
+        else
+        {
+            const int rowBytes = static_cast<int>(_depthWidth * sizeof(uint16_t));
+            for (int row = 0; row < _depthHeight; ++row)
+            {
+                const uint8_t *src = depthMat.ptr<uint8_t>(row);
+                std::memcpy(reinterpret_cast<uint8_t *>(dest) + static_cast<size_t>(row) * rowBytes, src, rowBytes);
+            }
+        }
+        ++_depthBuffered;
+        return true;
+    }
+
+    bool ensureDepthCapacity(uint64_t needed)
+    {
+        if (needed <= _depthAllocSize)
+            return true;
+        uint64_t target = _depthAllocSize;
+        while (target < needed)
+            target += _depthExtendStep;
+        const hsize_t extendDims[3] = {static_cast<hsize_t>(target),
+                                       static_cast<hsize_t>(_depthHeight),
+                                       static_cast<hsize_t>(_depthWidth)};
+        if (H5Dset_extent(_h5Dataset, extendDims) < 0)
+            return false;
+        _depthAllocSize = target;
+        return true;
+    }
+
+    bool writeDepthBatch(const void *data, size_t countFrames)
+    {
+        if (countFrames == 0)
+            return true;
+        const uint64_t targetIndex = _depthIndex + static_cast<uint64_t>(countFrames);
+        if (!ensureDepthCapacity(targetIndex))
+            return false;
 
         hid_t filespace = H5Dget_space(_h5Dataset);
         if (filespace < 0)
             return false;
         const hsize_t start[3] = {static_cast<hsize_t>(_depthIndex), 0, 0};
-        const hsize_t count[3] = {1, static_cast<hsize_t>(_depthHeight), static_cast<hsize_t>(_depthWidth)};
+        const hsize_t count[3] = {static_cast<hsize_t>(countFrames),
+                                  static_cast<hsize_t>(_depthHeight),
+                                  static_cast<hsize_t>(_depthWidth)};
         H5Sselect_hyperslab(filespace, H5S_SELECT_SET, start, nullptr, count, nullptr);
 
         hid_t memspace = H5Screate_simple(3, count, nullptr);
-        const herr_t status = H5Dwrite(_h5Dataset, H5T_NATIVE_UINT16, memspace, filespace, H5P_DEFAULT,
-                                       depthMat.data);
+        const herr_t status = H5Dwrite(_h5Dataset, H5T_NATIVE_UINT16, memspace, filespace, H5P_DEFAULT, data);
         H5Sclose(memspace);
         H5Sclose(filespace);
 
         if (status < 0)
             return false;
 
-        ++_depthIndex;
-        if (_depthChunkSize > 0 && (_depthIndex % static_cast<uint64_t>(_depthChunkSize) == 0))
+        _depthIndex += static_cast<uint64_t>(countFrames);
+        if (_depthChunkSizeUsed > 0 && (_depthIndex % static_cast<uint64_t>(_depthChunkSizeUsed) == 0))
             H5Fflush(_h5File, H5F_SCOPE_LOCAL);
         return true;
+    }
+
+    void flushDepthBuffer()
+    {
+        if (!_hdf5Ready || _depthBuffered == 0)
+            return;
+        if (writeDepthBatch(_depthChunkBuffer.data(), _depthBuffered))
+            _depthBuffered = 0;
     }
 
     GstElement *makeEncoder()
@@ -923,6 +978,7 @@ private:
     {
         _depthWidth = width;
         _depthHeight = height;
+        _depthFramePixels = static_cast<size_t>(width) * static_cast<size_t>(height);
 
         _h5File = H5Fcreate(_depthPath.string().c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
         if (_h5File < 0)
@@ -940,7 +996,8 @@ private:
         hid_t props = H5Pcreate(H5P_DATASET_CREATE);
         int chunkSize = _depthChunkSize > 0 ? _depthChunkSize : 1;
         chunkSize = std::min(chunkSize, 8);
-        hsize_t chunkDims[3] = {static_cast<hsize_t>(chunkSize),
+        _depthChunkSizeUsed = chunkSize;
+        hsize_t chunkDims[3] = {static_cast<hsize_t>(_depthChunkSizeUsed),
                                 static_cast<hsize_t>(height),
                                 static_cast<hsize_t>(width)};
         H5Pset_chunk(props, 3, chunkDims);
@@ -957,6 +1014,8 @@ private:
             return false;
         }
         _depthAllocSize = 0;
+        if (_depthChunkSizeUsed > 1 && _depthFramePixels > 0)
+            _depthChunkBuffer.resize(_depthChunkSizeUsed * _depthFramePixels);
         _hdf5Ready = true;
         return true;
     }
@@ -999,6 +1058,7 @@ private:
 
     void closeHdf5()
     {
+        flushDepthBuffer();
         if (_h5Dataset >= 0)
         {
             if (_depthIndex > 0)
@@ -1067,6 +1127,10 @@ private:
     bool _hdf5Ready{false};
     bool _ptsInitialized{false};
     bool _depthTypeWarned{false};
+    int _depthChunkSizeUsed{0};
+    size_t _depthFramePixels{0};
+    size_t _depthBuffered{0};
+    std::vector<uint16_t> _depthChunkBuffer;
     std::chrono::system_clock::time_point _firstTimestamp;
     std::string _encoderName;
     std::string _inputGstFormat;
