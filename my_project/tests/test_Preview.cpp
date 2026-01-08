@@ -52,6 +52,6 @@ TEST(PreviewTest, UpdatesLabelPixmap)
     preview.showFrame(frame);
     QApplication::processEvents();
 
-    ASSERT_NE(display->pixmap(), nullptr);
-    EXPECT_FALSE(display->pixmap()->isNull());
+    const QPixmap pixmap = display->pixmap(Qt::ReturnByValue);
+    EXPECT_FALSE(pixmap.isNull());
 }

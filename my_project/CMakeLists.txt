@@ -2,9 +2,18 @@ cmake_minimum_required(VERSION 3.16)
 project(DataCollectorApp VERSION 1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
+
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-
+# === 在此处添加：ASan 内存检测配置 ===
+# 仅在 Debug 模式下开启，避免影响 Release 版性能
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    message(STATUS "Build type is Debug: Enabling AddressSanitizer")
+    
+    # 作用于所有后续定义的 target
+    add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address)
+endif()
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
