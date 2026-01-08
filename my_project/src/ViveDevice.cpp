@@ -71,6 +71,7 @@ private:
 };
 
 class ViveDevice : public ViveInterface {
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 public:
 
     ViveDevice(Logger& logger) : _logger(logger) {}
