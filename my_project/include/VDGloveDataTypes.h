@@ -12,9 +12,7 @@
 constexpr int LENGTH_BODY = 23;
 constexpr int LENGTH_HAND = 20;
 
-// 为了防止编译器字节对齐差异，强制 1 字节对齐（视 SDK 编译选项而定，通常 ctypes 默认对齐，但在网络传输结构体中常紧凑）
-// 这里假设 SDK 是标准对齐，若数据错乱可尝试 #pragma pack(1)
-#pragma pack(push, 1)
+// #pragma pack(push, 1)
 struct MocapData {
     bool isUpdate;
     unsigned int frameIndex;
@@ -56,7 +54,7 @@ struct MocapData {
     int gestureResultL;
     int gestureResultR;
 };
-#pragma pack(pop)
+// #pragma pack(pop)
 
 struct HandData {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
