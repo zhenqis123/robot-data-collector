@@ -338,12 +338,12 @@ void Preview::renderInfo(View &view)
     std::string combined = view.infoBaseText;
     if (!view.lastArucoText.empty())
         combined += " | " + view.lastArucoText;
-    if (view.infoLabel->text().toStdString() == combined)
-        return;
     auto label = view.infoLabel;
     QMetaObject::invokeMethod(label, [label, combined]() {
+        if (label->text().toStdString() == combined)
+            return;
         label->setText(QString::fromStdString(combined));
-    });
+    }, Qt::QueuedConnection);
 }
 
 void Preview::dispatchToLabel(QLabel *label, const QImage &image)

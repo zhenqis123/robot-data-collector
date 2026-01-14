@@ -42,7 +42,7 @@ int test() {
     VDGloveConfig VDGloveConfig;
 
     VDGloveConfig.local_port = 9999;
-    VDGloveConfig.server_ip = "192.168.20.240";
+    VDGloveConfig.server_ip = "192.168.20.157";
     VDGloveConfig.server_port = 9998;
     VDGloveConfig.device_index = 0;
     VDGloveConfig.process_mano = true;
