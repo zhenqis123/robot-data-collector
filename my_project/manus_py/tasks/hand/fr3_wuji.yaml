@@ -1,0 +1,35 @@
+name: "wuji"
+robotAssetFile: "wuji/fr3_wuji_right.urdf"
+robotAssetFileVisualRealistic: "wuji/fr3_wuji_right_visual_realistic.urdf"
+#GelloURDF: "assets/being_arm_assets/franka/gello_for_being.urdf" #"/home/user/yhq/BODex/src/curobo/content/assets/robot/franka_description/fr3.urdf"
+#GelloScale: 1
+arm_dof_names: ['fr3_joint1', 'fr3_joint2', 'fr3_joint3', 'fr3_joint4', 'fr3_joint5', 'fr3_joint6', 'fr3_joint7']
+palm_link: "palm_link"
+fingertips_link: ["finger1_tip_link", "finger2_tip_link", "finger3_tip_link", 
+    "finger4_tip_link", "finger5_tip_link"]
+
+eef_link: "fr3_link8"
+num_arm_dofs: 7
+palm_offset: [0, 0, 0]
+default_dof_pos: [0, 0, 0, -1.6, 0, 1.6, 0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0]
+num_obs_dict:
+  "armdof": 7
+  "handdof": 20
+  "fulldof": 27
+  "eefpose": 7
+  "ftpos": 15
+  "palmpose": 7
+  "handposerror": 20
+  "lastact": 27
+  "objxyz": 3
+  "objpose": 7
+  "objinitpose": 7
+  "pcfeat": 64 
+  "refaction": 27
+  "objpcl": 1536 # 512*3
+numActions: 27
+hardware_active_hand_dof_names: ["finger1_joint1", "finger1_joint2", "finger1_joint3", "finger1_joint4", 
+    "finger2_joint1", "finger2_joint2", "finger2_joint3", "finger2_joint4", 
+    "finger3_joint1", "finger3_joint2", "finger3_joint3", "finger3_joint4", 
+    "finger4_joint1", "finger4_joint2", "finger4_joint3", "finger4_joint4", 
+    "finger5_joint1", "finger5_joint2", "finger5_joint3", "finger5_joint4"]

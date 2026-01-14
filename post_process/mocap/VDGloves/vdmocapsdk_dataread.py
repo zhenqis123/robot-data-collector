@@ -3,20 +3,21 @@ import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from PathConfig import PROJECT_ROOT, TACTASK_DIR, TELEOP_DIR, TACDATA_DIR
+# from PathConfig import PROJECT_ROOT, TACTASK_DIR, TELEOP_DIR, TACDATA_DIR
 
 from ctypes import *
 from collections import namedtuple
-from teleop.VDGloves.vdmocapsdk_nodelist import LENGTH_BODY, LENGTH_HAND
+from vdmocapsdk_nodelist import LENGTH_BODY, LENGTH_HAND
 from time import sleep
 
 
-if platform.system() == "Windows":
-    SDK_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                            'VDMocapSDK_DataRead.dll')
-else:
-    SDK_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                            'libVDMocapSDK_DataRead.so')
+# if platform.system() == "Windows":
+#     SDK_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)),
+#                             'VDMocapSDK_DataRead.dll')
+# else:
+#     SDK_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)),
+#                             'libVDMocapSDK_DataRead.so')
+SDK_PATH = "../../../my_project/resources/libVDMocapSDK_DataRead.so"
 DATAREAD = CDLL(SDK_PATH)
 
 

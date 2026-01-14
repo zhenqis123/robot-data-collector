@@ -139,6 +139,8 @@ private:
     QCheckBox *_chkSaveGlove{nullptr};
     QCheckBox *_chkConnectVive{nullptr};
     QCheckBox *_chkSaveVive{nullptr};
+    QCheckBox *_chkConnectManus{nullptr};
+    QCheckBox *_chkSaveManus{nullptr};
 
     std::vector<TaskTemplate> _taskTemplates;
     std::optional<TaskTemplate> _currentTask;

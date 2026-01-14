@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
+# === Fix for Anaconda/Conda Interference ===
+# Temporarily remove Anaconda/Miniconda paths from PATH to prevent CMake 
+# from picking up incompatible libraries (HDF5, OpenSSL, etc.)
+export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v "anaconda" | grep -v "miniconda" | tr '\n' ':' | sed 's/:$//')
+unset CONDA_PREFIX
+unset CONDA_DEFAULT_ENV
+unset PYTHONHOME
+unset PYTHONPATH
+unset LD_LIBRARY_PATH
+# ===========================================
 # Root of the repository
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$ROOT_DIR/my_project"

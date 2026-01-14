@@ -193,7 +193,12 @@ def process_capture(meta_path: Path, workers: int, delete_original_depth: bool) 
         cam_dir = base / sanitize_camera_id(str(cam_id))
         depth_dir = cam_dir / "depth"
         color_dir = cam_dir / "color"
-        m = prepare_meta(cam)
+        try:
+            m = prepare_meta(cam)
+        except KeyError as e:
+            print(f"[align] skipping {cam_id} in {base}: missing meta key {e}")
+            continue
+
         depth_files = sorted(depth_dir.glob("*.png")) if depth_dir.exists() else []
         if depth_files and color_dir.exists():
             out_dir = cam_dir / "depth_aligned"

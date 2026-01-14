@@ -49,6 +49,13 @@ DataCapture::DataCapture(std::vector<DeviceSpec> devices,
         ctx->device = std::move(spec.device);
         if (ctx->device)
         {
+            auto deviceId = ctx->device->name();
+            auto stats = std::make_shared<CameraStats>();
+            _stats[deviceId] = stats;
+            ctx->stats = stats;
+            _preview.registerCameraView(deviceId, "TacGlove");
+            _preview.updateCameraStats(deviceId, stats->current());
+            
             _logger.info("TacGlove device added: %s", ctx->device->name().c_str());
             _tacGloves.push_back(std::move(ctx));
         }
@@ -185,7 +192,7 @@ void DataCapture::captureLoop(DeviceContext *ctx)
     {
         FrameData frame = ctx->device->captureFrame();
         const bool hasImage = frame.hasImage();
-        if (!hasImage && !frame.gloveData.has_value() && !frame.viveData.has_value())
+        if (!hasImage && !frame.gloveData.has_value() && !frame.viveData.has_value() && !frame.manusData.has_value())
             continue;
         frame.cameraId = ctx->device->name();
 
@@ -197,10 +204,12 @@ void DataCapture::captureLoop(DeviceContext *ctx)
         }
 
         enqueueForDisplay(ctx, frame);
+
+        captureTacGloveFrame(frame.timestamp, frame.deviceTimestampMs);
+
         if (_recording.load() && !_paused.load())
         {
             enqueueForStorage(ctx, frame);
-            captureTacGloveFrame(frame.timestamp, frame.deviceTimestampMs);
         }
 
         if (_arucoTracker && hasImage)
@@ -410,15 +419,33 @@ void DataCapture::storageLoop(DeviceContext *ctx)
 void DataCapture::captureTacGloveFrame(const std::chrono::system_clock::time_point &timestamp,
                                        int64_t deviceTimestampMs)
 {
+    std::lock_guard<std::mutex> lock(_tacGloveCaptureMutex);
     for (auto &ctxPtr : _tacGloves)
     {
         auto *ctx = ctxPtr.get();
         if (ctx->device)
         {
             TacGloveDualFrameData frame = ctx->device->captureFrame(timestamp, deviceTimestampMs);
-            if (!frame.leftFrame.data.empty() || !frame.rightFrame.data.empty())
+            
+            if (ctx->stats)
             {
-                enqueueForTacGloveStorage(ctx, frame);
+                if (auto fps = ctx->stats->recordCapture())
+                    _preview.updateCameraStats(frame.deviceId, *fps);
+            }
+
+            FrameData fd;
+            fd.timestamp = timestamp;
+            fd.deviceTimestampMs = deviceTimestampMs;
+            fd.cameraId = frame.deviceId;
+            fd.tacGloveData = frame;
+            _preview.showFrame(fd);
+
+            if (_recording.load() && !_paused.load())
+            {
+                if (!frame.leftFrame.data.empty() || !frame.rightFrame.data.empty())
+                {
+                    enqueueForTacGloveStorage(ctx, frame);
+                }
             }
         }
     }
