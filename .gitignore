@@ -69,6 +69,8 @@ outputs/
 tracking_results/
 post_process/manotorch
 post_process/MinimalIK
+my_project/tac_glove_py/__pycache__
+
 # 1. 忽略 third_party 文件夹下的所有内容
 third_party/*
 

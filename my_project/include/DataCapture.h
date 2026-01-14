@@ -96,6 +96,7 @@ private:
         std::mutex storageMutex;
         bool storageRunning{false};
         bool dropWarned{false};
+        std::shared_ptr<CameraStats> stats;
     };
 
     struct DeviceContext
@@ -125,6 +126,7 @@ private:
     size_t _maxDisplayQueue{100};
     std::vector<std::unique_ptr<TacGloveContext>> _tacGloves;
     size_t _maxTacGloveQueue{500};
+    std::mutex _tacGloveCaptureMutex;
     std::atomic<bool> _running{false};
     std::atomic<bool> _recording{false};
     std::atomic<bool> _paused{false};

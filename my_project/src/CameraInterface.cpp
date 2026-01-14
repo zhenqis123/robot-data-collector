@@ -27,6 +27,7 @@
 #include "NetworkDevice.h"
 #include "VDGloveInterface.h"
 #include "ViveInterface.h"
+#include "ManusInterface.h"
 
 namespace
 {
@@ -1186,6 +1187,8 @@ std::unique_ptr<CameraInterface> createCamera(const CameraConfig &config, Logger
         return createGloveDevice(config.type, logger);
     if (config.type == "Vive" || config.type == "ViveTracker")
         return createViveDevice(logger);
+    if (config.type == "Manus" || config.type == "ManusGloves")
+        return createManusDevice(logger);
     logger.warn("Unknown camera type '%s', defaulting to RGB", config.type.c_str());
     return std::make_unique<SimulatedCamera>("RGB", logger);
 }

@@ -6,24 +6,28 @@ from enum import Enum
 import numpy as np
 import matplotlib.pyplot as plt
 
+import os
+import json
+
 PORT  = "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port1"
-# #on titan
-# LEFT_PORT  = "/dev/serial/by-path/pci-0000:00:14.0-usb-0:14:1.0-port0"
-# RIGHT_PORT = "/dev/serial/by-path/pci-0000:00:14.0-usb-0:6:1.0-port0"
 
-# on 4090
-LEFT_PORT  = "/dev/serial/by-path/pci-0000:14:00.3-usb-0:2:1.0"
-LEFT_PORT  = "/dev/serial/by-path/pci-0000:11:00.0-usb-0:3:1.0"
-LEFT_PORT  = "/dev/serial/by-path/pci-0000:11:00.0-usb-0:3:1.0"
-LEFT_PORT  = "/dev/serial/by-path/pci-0000:0e:00.0-usb-0:3:1.0"
-# LEFT_PORT = "/dev/serial/by-path/pci-0000:11:00.0-usb-0:3:1.0"
-
-RIGHT_PORT = "/dev/serial/by-path/pci-0000:0e:00.0-usb-0:2:1.0"
-RIGHT_PORT = "/dev/serial/by-path/pci-0000:0e:00.0-usb-0:2:1.0"
-RIGHT_PORT = "/dev/ttyACM0"
-# RIGHT_PORT = "/dev/serial/by-path/pci-0000:11:00.0-usb-0:3:1.0"
-RIGHT_PORT = "/dev/serial/by-path/pci-0000:11:00.0-usb-0:3:1.0"
-RIGHT_PORT = "/dev/serial/by-path/pci-0000:0e:00.0-usb-0:3:1.0"
+# Load configuration from config.json
+try:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.abspath(os.path.join(script_dir, "../resources/config.json"))
+    
+    with open(config_path, 'r') as f:
+        config_data = json.load(f)
+        tac_config = config_data.get("tac_glove", {})
+        # Defaults if not present in config
+        LEFT_PORT = tac_config.get("left_port", "/dev/serial/by-path/pci-0000:14:00.4-usb-0:1:1.0")
+        RIGHT_PORT = tac_config.get("right_port", "/dev/serial/by-path/pci-0000:0e:00.0-usb-0:3:1.0")
+        print(f"[glove_hand] Loaded configuration: Left={LEFT_PORT}, Right={RIGHT_PORT}")
+except Exception as e:
+    print(f"[glove_hand] Warning: Failed to load config ({e}). Using hardcoded defaults.")
+    # Fallback defaults
+    LEFT_PORT  = "/dev/serial/by-path/pci-0000:14:00.4-usb-0:1:1.0"
+    RIGHT_PORT = "/dev/serial/by-path/pci-0000:0e:00.0-usb-0:3:1.0"
 
 # BAUD = 921_600
 # BAUD = 460_800	
