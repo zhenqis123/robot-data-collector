@@ -173,6 +173,10 @@ def list_meta_files(root: Path, find_meta: bool, max_depth: int = 2) -> List[Pat
     if find_meta:
         result: List[Path] = []
         for dirpath, dirnames, filenames in os.walk(root):
+            # Optimization: skip common non-camera folders
+            if "Glove" in Path(dirpath).name or "Tracker" in Path(dirpath).name or "tactile" in Path(dirpath).name or "glove" in Path(dirpath).name:
+                continue
+
             depth = len(Path(dirpath).relative_to(root).parts)
             if depth > max_depth:
                 dirnames[:] = []
@@ -183,6 +187,9 @@ def list_meta_files(root: Path, find_meta: bool, max_depth: int = 2) -> List[Pat
     result = []
     for child in sorted(root.iterdir()):
         if not child.is_dir():
+            continue
+        # Skip tactile/glove folders at root level too
+        if "Glove" in child.name or "Tracker" in child.name or "tactile" in child.name or "glove" in child.name:
             continue
         meta = child / "meta.json"
         if meta.exists():
@@ -672,6 +679,13 @@ def main() -> int:
     with progress:
         for idx, meta in enumerate(metas, start=1):
             capture_root = meta.parent
+            
+            # Pre-check requirements to avoid "processing" trivial skips which might trigger issues
+            frames_csv = capture_root / "frames_aligned.csv"
+            if not frames_csv.exists():
+                # Silently skip or log debug
+                continue
+
             wrote = process_capture(
                 capture_root,
                 meta,

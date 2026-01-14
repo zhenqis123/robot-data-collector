@@ -67,6 +67,8 @@ TODO.md
 data_new/
 outputs/
 tracking_results/
+post_process/manotorch
+post_process/MinimalIK
 # 1. 忽略 third_party 文件夹下的所有内容
 third_party/*
 

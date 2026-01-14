@@ -2,11 +2,11 @@ import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from PathConfig import PROJECT_ROOT, TACTASK_DIR, TELEOP_DIR, TACDATA_DIR
+# from PathConfig import PROJECT_ROOT, TACTASK_DIR, TELEOP_DIR, TACDATA_DIR
 import socket
 import threading
 import copy
-import teleop.VDGloves.configs
+import configs
 from time import sleep
 import json # 用于美化字典输出
 from enum import Enum
@@ -15,13 +15,49 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 import torch
 # 确保从 vdmocapsdk_dataread 中导入 MocapData 结构体
-from teleop.VDGloves.vdmocapsdk_dataread import *
-from teleop.VDGloves.data_types_MOCAP import *
+from vdmocapsdk_dataread import *
+from data_types_MOCAP import *
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
 
-from tactask.glove_hand import HandType 
+
+
+class HandType(Enum):
+    """Enumeration for left and right hands."""
+    LEFT = "left"
+    RIGHT = "right"
+    BOTH = "both"
+    RIGHT1 = "Right"
+    LEFT1 = "Left"
+
+    def __eq__(self, other):
+        # 如果比较的是同一个枚举类型，使用默认比较
+        if isinstance(other, HandType):
+            return super().__eq__(other)
+        
+        # 如果比较的是第一个 HandType 枚举的实例
+        try:
+            # 检查是否是第一个 HandType 类型
+            if hasattr(other, 'name') and hasattr(other, 'value'):
+                # 将第一个枚举的名称与第二个枚举的值进行比较（忽略大小写）
+                return self.value.lower() == other.name.lower()
+        except:
+            pass
+        
+        # 其他情况返回 False
+        return False
+    
+    def __hash__(self):
+        # 确保哈希值与默认实现一致
+        return hash(self.value)
+
+    def upper(self):
+        return self.name.upper()
+    
+    def lower(self):
+        return self.name.lower()
+
 
 VD_RIGHT_HAND_TO_MANO = np.array([
     [-1,0,0],
@@ -37,7 +73,7 @@ VD_LEFT_HAND_TO_MANO = np.array([
 
 def VD_to_mano_keypoints(hand_keypoints, hand_wrist_rot, hand_type):
     # 断言输入形状：支持单样本(21,3)或批量样本(N,21,3)
-    print(hand_keypoints.shape)
+    # print(hand_keypoints.shape)
     assert hand_keypoints.shape[-2:] == (21, 3), \
         f"hand_keypoints 最后两维需为(21,3)，实际为{hand_keypoints.shape[-2:]}"
     assert hand_wrist_rot.shape[-2:] == (3, 3), \
