@@ -2,15 +2,13 @@ import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from PathConfig import PROJECT_ROOT, TACTASK_DIR, TELEOP_DIR, TACDATA_DIR
+# from PathConfig import PROJECT_ROOT, TACTASK_DIR, TELEOP_DIR, TACDATA_DIR
 import socket
 import threading
 import copy
-import teleop.VDGloves.configs as configs
+import configs as configs
 from time import sleep
-
-# 确保从 vdmocapsdk_dataread 中导入 MocapData 结构体
-from teleop.VDGloves.vdmocapsdk_dataread import *
+from vdmocapsdk_dataread import *
 
 
 class RobotData:

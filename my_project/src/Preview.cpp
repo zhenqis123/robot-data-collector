@@ -75,7 +75,9 @@ void Preview::registerCameraView(const std::string &cameraId, const std::string 
 
     View view;
     view.container = group;
-    view.isTextOnly = (type == "VDGlove" || type == "Vive" || type == "ViveTracker");
+    // Update: Treat TacGlove and Manus as text-only views for compact display
+    view.isTextOnly = (type == "VDGlove" || type == "Vive" || type == "ViveTracker" || 
+                       type == "TacGlove" || type == "Manus" || type == "ManusGloves");
 
     if (view.isTextOnly)
     {
@@ -182,6 +184,27 @@ void Preview::showFrame(const FrameData &frame)
             {
                 ss << "#" << i << (frame.viveData->trackers[i].valid ? "[OK]" : "[NO]") << " ";
             }
+            QMetaObject::invokeMethod(view.dataLabel, [lbl = view.dataLabel, text = ss.str()]() {
+                lbl->setText(QString::fromStdString(text));
+            });
+        }
+        else if (frame.tacGloveData)
+        {
+            std::ostringstream ss;
+            ss << "Left: " << (frame.tacGloveData->leftFrame.isMissing ? "None" : "OK")
+               << " | Right: " << (frame.tacGloveData->rightFrame.isMissing ? "None" : "OK")
+               << " | TS: " << frame.deviceTimestampMs;
+            QMetaObject::invokeMethod(view.dataLabel, [lbl = view.dataLabel, text = ss.str()]() {
+                lbl->setText(QString::fromStdString(text));
+            });
+        }
+        else if (frame.manusData)
+        {
+            std::ostringstream ss;
+            bool leftOk = !frame.manusData->left_hand.joints.empty();
+            bool rightOk = !frame.manusData->right_hand.joints.empty();
+            ss << "Left: " << (leftOk ? "OK" : "None")
+               << " | Right: " << (rightOk ? "OK" : "None");
             QMetaObject::invokeMethod(view.dataLabel, [lbl = view.dataLabel, text = ss.str()]() {
                 lbl->setText(QString::fromStdString(text));
             });

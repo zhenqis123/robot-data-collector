@@ -14,6 +14,8 @@
 #include "IntrinsicsManager.h"
 #include "VDGloveDataTypes.h"
 #include "ViveDataTypes.h"
+#include "ManusDataTypes.h"
+#include "TacGlove.h"
 
 class Logger;
 
@@ -38,6 +40,8 @@ struct FrameData
     // Optional sensor data
     std::optional<VDGloveFrameData> gloveData;
     std::optional<ViveFrameData> viveData;
+    std::optional<ManusFrameData> manusData;
+    std::optional<TacGloveDualFrameData> tacGloveData;
 };
 struct ArucoDetection
 {

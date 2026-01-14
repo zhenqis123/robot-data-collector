@@ -67,6 +67,7 @@ set(PROJECT_SOURCES
     src/TestGlove.cpp
     src/VDGloveDevice.cpp
     src/ViveDevice.cpp
+    src/ManusDevice.cpp
     
     src/CameraInterface.cpp
 

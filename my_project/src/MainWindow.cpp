@@ -184,10 +184,12 @@ void MainWindow::updateControls()
     // Aux controls: disable connect toggle while running
     _chkConnectGlove->setEnabled(!hasCapture);
     _chkConnectVive->setEnabled(!hasCapture);
+    _chkConnectManus->setEnabled(!hasCapture);
     // Save toggle can be changed anytime? Or only before recording?
     // Let's allow changing save status only when not recording to avoid confusion
     _chkSaveGlove->setEnabled(!recording);
     _chkSaveVive->setEnabled(!recording);
+    _chkSaveManus->setEnabled(!recording);
 
     // TacGlove calibration requires capture running
     if (_clearTacButton)
@@ -444,19 +446,27 @@ QGroupBox *MainWindow::createAuxDeviceGroup()
     auto *layout = new QGridLayout(box);
 
     _chkConnectGlove = new QCheckBox("VDGlove");
-    _chkConnectGlove->setChecked(true);
+    _chkConnectGlove->setChecked(false); // Default OFF
     _chkSaveGlove = new QCheckBox("Save");
-    _chkSaveGlove->setChecked(true);
+    _chkSaveGlove->setChecked(false); // Default OFF
 
     _chkConnectVive = new QCheckBox("Vive");
-    _chkConnectVive->setChecked(true);
+    _chkConnectVive->setChecked(false); // Default OFF
     _chkSaveVive = new QCheckBox("Save");
-    _chkSaveVive->setChecked(true);
+    _chkSaveVive->setChecked(false); // Default OFF
+
+    // Manus Glove Controls
+    _chkConnectManus = new QCheckBox("ManusGloves");
+    _chkConnectManus->setChecked(true); // Default ON
+    _chkSaveManus = new QCheckBox("Save");
+    _chkSaveManus->setChecked(true); // Default ON
 
     layout->addWidget(_chkConnectGlove, 0, 0);
     layout->addWidget(_chkSaveGlove, 0, 1);
     layout->addWidget(_chkConnectVive, 1, 0);
     layout->addWidget(_chkSaveVive, 1, 1);
+    layout->addWidget(_chkConnectManus, 2, 0);
+    layout->addWidget(_chkSaveManus, 2, 1);
 
     return box;
 }
@@ -1518,6 +1528,10 @@ void MainWindow::onOpenCameras()
         if ((cfg.type == "Vive" || cfg.type == "ViveTracker") && !_chkConnectVive->isChecked()) {
             continue;
         }
+        // ManusGloves Filter
+        if ((cfg.type == "ManusGloves") && ((_chkConnectManus && !_chkConnectManus->isChecked()) || !_chkConnectManus)) {
+            continue;
+        }
 
         if (cfg.type == "RealSense" && cfg.serial.empty())
         {
@@ -1562,6 +1576,32 @@ void MainWindow::onOpenCameras()
     else
     {
         _logger.warn("Failed to initialize TacGlove device");
+    }
+
+    // Manus Glove Device Manually Added
+    if (_chkConnectManus && _chkConnectManus->isChecked())
+    {
+        CameraConfig cfg;
+        cfg.type = "ManusGloves"; 
+        cfg.id = 9;
+        // The port is usually read from config, but here we enforce or fallback
+        // The factory uses extraSettings "port"
+        cfg.extraSettings["port"] = "6667"; 
+        cfg.extraSettings["target_fps"] = "60.0";
+
+        auto dev = createCamera(cfg, _logger);
+        if (dev && dev->initialize(cfg))
+        {
+            DeviceSpec spec;
+            spec.device = std::move(dev);
+            spec.type = "ManusGloves";
+            devices.push_back(std::move(spec));
+            _logger.info("ManusGloves initialized manually in onOpenCameras");
+        }
+        else
+        {
+            _logger.warn("Failed to initialize ManusGloves manually");
+        }
     }
 
     _capture = std::make_unique<DataCapture>(std::move(devices),
@@ -1656,6 +1696,10 @@ void MainWindow::onStartRecording()
         if (_chkSaveVive->isChecked()) {
             typesToRecord.insert("Vive");
             typesToRecord.insert("ViveTracker");
+        }
+        if (_chkSaveManus && _chkSaveManus->isChecked()) {
+            typesToRecord.insert("ManusGloves");
+            typesToRecord.insert("Manus");
         }
 
         auto info = gatherCaptureInfo();
@@ -1842,7 +1886,7 @@ void MainWindow::onEndStep()
         const auto subId = t.current ? t.current->subtaskId : _taskMachine.currentSubtaskId().value_or("");
         const auto subDescCn = getSubtaskSpokenPromptCnById(subId);
         const auto subDesc = getSubtaskSpokenPromptById(subId);
-        const auto fallback = getSubtaskDescriptionById(subId);
+               const auto fallback = getSubtaskDescriptionById(subId);
         const auto subText = (useChinesePrompts() && !subDescCn.empty()) ? subDescCn : (subDesc.empty() ? fallback : subDesc);
         if (!subText.empty())
             prompt += (prompt.empty() ? "" : " ") + subText;
@@ -2202,6 +2246,3 @@ void MainWindow::updatePromptWindowMedia(const std::string &subtaskId, const std
         _promptPlayer->play();
     }
 }
-
-#include <utility>
-#include "MainWindow.moc"

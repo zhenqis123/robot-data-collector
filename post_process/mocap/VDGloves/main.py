@@ -33,7 +33,7 @@ def main() -> None:
 
     # 获取广播数据相关
     data_stream = DataStream()
-    data_stream.set_ip("192.168.20.240")  # 广播 IP
+    data_stream.set_ip("192.168.20.157")  # 广播 IP
     data_stream.set_broascast_port(9998)  # 广播端口
     data_stream.set_local_port(9999)  # 本地端口
     if not data_stream.connect():
