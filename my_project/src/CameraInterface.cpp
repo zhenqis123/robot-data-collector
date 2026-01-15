@@ -286,28 +286,19 @@ public:
                 return data;
             }
 
-            // Check for stuck frames
-            const auto currentDepthFrameNumber = depth.get_frame_number();
-            if (currentDepthFrameNumber == _lastDepthFrameNumber && _lastDepthFrameNumber != 0)
+            const unsigned long long currentDepthNum = depth.get_frame_number();
+            const double currentDepthTs = depth.get_timestamp();
+            if (_lastDepthFrameNum != 0 && currentDepthNum == _lastDepthFrameNum)
             {
-                _stuckDepthCount++;
-                if (_stuckDepthCount % 30 == 0) // Log every ~1s (assuming 30fps)
-                {
-                    _logger.warn("RealSense depth frame stuck on %llu for %d frames", 
-                        _lastDepthFrameNumber, _stuckDepthCount);
-                }
-                
-                if (_stuckDepthCount > 90) // 3 seconds of stuck frames
-                {
-                    restartPipeline();
-                    return data; // Return empty data to skip this frame
-                }
+                 _logger.warn("RealSense: STALE DEPTH FRAME DETECTED! Frame #%llu (TS: %.2f) matches previous.",
+                              currentDepthNum, currentDepthTs);
             }
-            else
+            if (_lastDepthTs > 0.0 && std::abs(currentDepthTs - _lastDepthTs) < 0.001)
             {
-                _stuckDepthCount = 0;
-                _lastDepthFrameNumber = currentDepthFrameNumber;
+                 _logger.warn("RealSense: STALE DEPTH TIMESTAMP DETECTED! TS %.3f matches previous.", currentDepthTs);
             }
+            _lastDepthFrameNum = currentDepthNum;
+            _lastDepthTs = currentDepthTs;
 
             auto colorHolder = std::make_shared<rs2::video_frame>(color);
             auto depthHolder = std::make_shared<rs2::depth_frame>(depth);
@@ -429,34 +420,6 @@ public:
     CaptureMetadata captureMetadata() const override;
 
 private:
-    void restartPipeline()
-    {
-        _logger.warn("Restarting RealSense pipeline due to stuck frames...");
-        try
-        {
-            _pipeline.stop();
-        }
-        catch (...) {}
-        
-        try 
-        {
-            if (_device)
-            {
-                // Optional: hardware reset
-                // _device.hardware_reset(); 
-                // std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-            }
-            _pipeline.start(_rsConfig);
-            _lastDepthFrameNumber = 0;
-            _stuckDepthCount = 0;
-            _logger.info("RealSense pipeline restarted successfully");
-        }
-        catch (const rs2::error &e)
-        {
-            _logger.error("Failed to restart pipeline: %s", e.what());
-        }
-    }
-
     Logger &_logger;
     CameraConfig _config;
     bool _alignEnabled{true};
@@ -470,8 +433,8 @@ private:
     std::string _serial;
     std::string _identifier;
     CaptureMetadata _metadata;
-    unsigned long long _lastDepthFrameNumber{0};
-    int _stuckDepthCount{0};
+    unsigned long long _lastDepthFrameNum{0};
+    double _lastDepthTs{0.0};
 };
 
 class WebcamCamera : public CameraInterface
