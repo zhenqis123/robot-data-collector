@@ -107,12 +107,25 @@ def read_frames_aligned(csv_path: Path) -> Tuple[List[Dict[str, str]], List[str]
             return rows, cam_ids
             
         rows = list(reader)
+        
+        # 1. Add explicitly named cameras
         for field in reader.fieldnames:
             if field.endswith("_color"):
                 cid = field.replace("_color", "")
                 if cid == "ref":
                     continue
+                # Filter: Only treat RealSense devices as cameras
+                if "RealSense" not in cid:
+                    continue
                 cam_ids.append(cid)
+        
+        # 2. Add reference camera if present in rows
+        if rows and "ref_camera" in reader.fieldnames:
+            ref_cam = rows[0].get("ref_camera")
+            if ref_cam and ref_cam not in cam_ids:
+                # Filter: Only treat RealSense devices as cameras
+                if "RealSense" in ref_cam:
+                    cam_ids.append(ref_cam)
                 
     return rows, sorted(set(cam_ids))
 
@@ -273,50 +286,117 @@ def process_frame(
     for cid in cam_ids:
         c_safe = sanitize_camera_id(cid)
         
-        # 1. Get Pose
-        # Poses are keyed by frame index and camera ID
-        # Note: frames_aligned.csv might have gaps, but 'frame_index' usually monotonic.
-        # We need the alignment between CSV row index and pose frame_index.
-        # By convention in this pipeline, frame_index in poses usually corresponds 
-        # to the sequence frame number.
-        # Let's assume input row "frame" field exists or we imply it.
-        # Actually estimate_camera_poses uses image index.
+        # Handle 'ref_' prefix logic for the reference camera
+        # If this cid is the ref_camera, the columns are prefix 'ref_'
+        is_ref = (row.get("ref_camera") == cid)
         
+        prefix = "ref" if is_ref else cid
+        
+        # 1. Get Pose
         T_w_c = poses.get((frame_idx, c_safe))
         if T_w_c is None:
-            # Skip this camera for this frame if no pose
+            if frame_idx == 0:
+                 print(f"[Debug] Frame {frame_idx} Cam {cid} ({c_safe}): Pose missing. Keys example: {list(poses.keys())[:2]}")
             continue
             
         intr = intrinsics.get(c_safe)
         if not intr:
+            if frame_idx == 0:
+                print(f"[Debug] Frame {frame_idx} Cam {cid} ({c_safe}): Intrinsics missing.")
             continue
             
         # 2. Load Images
-        # Color
-        color_rel = row.get(f"{cid}_color")
-        if not color_rel: continue
+        # Color column
+        color_col = f"{prefix}_color"
+        color_rel = row.get(color_col)
         
-        # Assume aligned depth is in depth_aligned/ folder with same stem as color
+        if not color_rel: 
+            if frame_idx == 0:
+                print(f"[Debug] Frame {frame_idx} Cam {cid}: color_rel empty for col {color_col}")
+            continue
+        
         # Or look for it next to color
         color_path = capture_root / c_safe / color_rel
         if not color_path.exists():
+            if frame_idx == 0:
+                print(f"[Debug] Frame {frame_idx} Cam {cid}: file not found {color_path}")
             continue
             
-        color_img = cv2.imread(str(color_path))
-        if color_img is None: continue
+        color_img = None
+        if color_path.suffix.lower() in {".mkv", ".mp4", ".avi", ".mov"}:
+            cap = cv2.VideoCapture(str(color_path))
+            if cap.isOpened():
+                frame_idx_col = f"{prefix}_frame_index"
+                source_idx_str = row.get(frame_idx_col)
+                
+                if source_idx_str and source_idx_str.isdigit():
+                    src_idx = int(source_idx_str)
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, src_idx)
+                    ret, frame = cap.read()
+                    if ret:
+                        color_img = frame
+                    elif frame_idx == 0:
+                        print(f"[Debug] Frame {frame_idx} Cam {cid}: Video read failed for src_idx {src_idx}")
+                elif frame_idx == 0:
+                     print(f"[Debug] Frame {frame_idx} Cam {cid}: Invalid/Missing frame index '{source_idx_str}'")
+                cap.release()
+        else:
+            color_img = cv2.imread(str(color_path))
+            
+        if color_img is None: 
+            if frame_idx == 0:
+                print(f"[Debug] Frame {frame_idx} Cam {cid}: color_img is None")
+            continue
         
         # Depth
-        # Construct depth path: replace 'color' with 'depth_aligned' and keep filename
-        # Or use row[f"{cid}_depth"] if existed (it doesn't in standard csv)
-        # Check standard convention: color/...png -> depth_aligned/...png
-        depth_path = color_path.parent.parent / "depth_aligned" / color_path.name
-        
         depth_img = None
-        if depth_path.exists():
-            depth_img = cv2.imread(str(depth_path), cv2.IMREAD_UNCHANGED)
         
-        # TODO: Handle .h5 if implemented in pipeline
+        # Strategy A: Check for depth_aligned folder (PNGs)
+        frame_idx_col = f"{prefix}_frame_index"
+        source_idx_str = row.get(frame_idx_col)
+             
+        if source_idx_str and source_idx_str.isdigit():
+             src_idx = int(source_idx_str)
+             # Try PNG in depth_aligned
+             aligned_png = capture_root / c_safe / "depth_aligned" / f"{src_idx:06d}.png"
+             if aligned_png.exists():
+                 depth_img = cv2.imread(str(aligned_png), cv2.IMREAD_UNCHANGED)
+             elif frame_idx == 0:
+                 pass # Be quiet, we will try H5 next
+
         if depth_img is None:
+             # Strategy B: Try loading from HDF5 if PNG not found
+             # Check for depth_aligned.h5
+             h5_path = capture_root / c_safe / "depth_aligned.h5"
+             
+             if h5py and h5_path.exists():
+                 try:
+                     with h5py.File(h5_path, 'r') as f:
+                        # Case 1: 'depth' dataset is a single large array (N, H, W)
+                        if "depth" in f and len(f["depth"].shape) == 3:
+                            # We need src_idx, but is src_idx 0-based index or original frame ID?
+                            # In align_depth.py (usually), if using 'depth' dataset, it stores frames sequentially.
+                            # 'src_idx' from CSV is usually the 0-based index if derived from row index.
+                            # frames_aligned.csv has *_frame_index column. 
+                            # If it's sequential 0..N, we can use src_idx directly.
+                            
+                            # Safety check bounds
+                            if src_idx < f["depth"].shape[0]:
+                                depth_img = f["depth"][src_idx]
+                        elif str(src_idx) in f:
+                            # Case 2: Dictionary style
+                            depth_img = f[str(src_idx)][:]
+                        else:
+                             # Case 3: Padded keys
+                             key_pad = f"{src_idx:06d}"
+                             if key_pad in f:
+                                 depth_img = f[key_pad][:]
+                 except Exception as e:
+                     if frame_idx == 0: print(f"[Debug] Failed to read H5 {h5_path}: {e}")
+
+        if depth_img is None:
+            if frame_idx == 0:
+                print(f"[Debug] Frame {frame_idx} Cam {cid}: depth_img is None. Checked PNG and H5.")
             continue
             
         # Depth is usually mm (uint16)
@@ -391,12 +471,76 @@ def main():
     # tools/align_depth.py looks recursively. Let's look for any meta.json
     metas = list(root.rglob("meta.json"))
     if not metas:
-        print("Error: No meta.json found in capture root")
-        sys.exit(1)
+        # Fallback: try root/meta.json
+        if (root / "meta.json").exists():
+             metas = [root / "meta.json"]
+        else:
+             print("Error: No meta.json found in capture root")
+             sys.exit(1)
         
     # Use the first meta found to load ALL camera intrinsics 
     # (assuming all plugged cams are in one meta, which is typical for this collector)
     intrinsics = load_intrinsics(metas[0])
+    
+    # 2. Load Poses
+    if not args.poses.exists():
+        print(f"Error: Poses file {args.poses} not found")
+        sys.exit(1)
+    poses = load_pose_entries(args.poses)
+    print(f"Loading poses from {args.poses}...")
+
+    # 3. Load Frames (Alignment)
+    # alignment CSV usually at root
+    aligned_csv = root / "frames_aligned.csv"
+    rows, cam_ids = read_frames_aligned(aligned_csv)
+    
+    if not rows:
+        print(f"Error: No frames found in {aligned_csv}")
+        sys.exit(1)
+        
+    print(f"Found {len(rows)} aligned frames, cameras: {cam_ids}")
+    
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    # 4. Main Loop
+    # Often alignment rows can be MANY, but we only want to process where we have poses.
+    # We iterate through rows (time) 
+    
+    process_count = 0
+    
+    # Optimization: Open video captures once if needed
+    # (For simplicity and robustness in this quick script, we open/close per frame or rely on OS caching. 
+    #  Ideally we'd keep them open.)
+    
+    for i, row in tqdm(enumerate(rows), total=len(rows), desc="Reconstructing"):
+        if i < args.start: continue
+        if process_count >= args.count: break
+        if i % args.stride != 0: continue
+        
+        # Current timestep frame index (reference camera index usually)
+        # poses are keyed by frame_index. 
+        # frames_aligned.csv has 'ref_frame_index'.
+        # Let's try to match row to pose key.
+        
+        # Robust strategy: 
+        # The 'frame_index' in pose JSON comes from running Apriltag on 'frames_aligned.csv' row-by-row.
+        # estimate_camera_poses_from_apriltag.py uses the ROW INDEX of frames_aligned as the frame_index 
+        # (or the frame_index field if specified, but usually it iterates rows).
+        # Let's assume pose key = i (row index) for now, or trace back.
+        
+        # Actually estimate_camera_poses...py:
+        #   for idx, row in enumerate(rows): ... entry["frame_index"] = idx ...
+        # So yes, key is row index `i`.
+        
+        # If pose keys are integers, we use i.
+        
+        process_frame(
+            row, cam_ids, root, intrinsics, poses, 
+            args.target_camera, args.output_dir, frame_idx=i
+        )
+        process_count += 1
+        
+    print(f"Done. Saved to {args.output_dir}")
     
     # 2. Load Poses
     print(f"Loading poses from {args.poses}...")

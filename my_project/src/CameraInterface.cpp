@@ -286,6 +286,29 @@ public:
                 return data;
             }
 
+            // Check for stuck frames
+            const auto currentDepthFrameNumber = depth.get_frame_number();
+            if (currentDepthFrameNumber == _lastDepthFrameNumber && _lastDepthFrameNumber != 0)
+            {
+                _stuckDepthCount++;
+                if (_stuckDepthCount % 30 == 0) // Log every ~1s (assuming 30fps)
+                {
+                    _logger.warn("RealSense depth frame stuck on %llu for %d frames", 
+                        _lastDepthFrameNumber, _stuckDepthCount);
+                }
+                
+                if (_stuckDepthCount > 90) // 3 seconds of stuck frames
+                {
+                    restartPipeline();
+                    return data; // Return empty data to skip this frame
+                }
+            }
+            else
+            {
+                _stuckDepthCount = 0;
+                _lastDepthFrameNumber = currentDepthFrameNumber;
+            }
+
             auto colorHolder = std::make_shared<rs2::video_frame>(color);
             auto depthHolder = std::make_shared<rs2::depth_frame>(depth);
             cv::Mat colorMat(cv::Size(colorHolder->get_width(), colorHolder->get_height()), CV_8UC2,
@@ -294,9 +317,12 @@ public:
                              const_cast<void *>(depthHolder->get_data()), cv::Mat::AUTO_STEP);
 
             data.image = colorMat;
-            data.depth = depthMat;
+            // Perform deep copy for depth to ensure data stability during storage queueing.
+            // This prevents issues where the SDK might reuse the underlying buffer for subsequent frames
+            // while this frame is still waiting in the write queue.
+            data.depth = depthMat.clone();
             data.imageOwner = colorHolder;
-            data.depthOwner = depthHolder;
+            data.depthOwner = nullptr; // Depth data is now owned by cv::Mat
             data.timestamp = std::chrono::system_clock::now();
             data.deviceTimestampMs = static_cast<int64_t>(color.get_timestamp());
             data.cameraId = _identifier;
@@ -403,6 +429,34 @@ public:
     CaptureMetadata captureMetadata() const override;
 
 private:
+    void restartPipeline()
+    {
+        _logger.warn("Restarting RealSense pipeline due to stuck frames...");
+        try
+        {
+            _pipeline.stop();
+        }
+        catch (...) {}
+        
+        try 
+        {
+            if (_device)
+            {
+                // Optional: hardware reset
+                // _device.hardware_reset(); 
+                // std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+            }
+            _pipeline.start(_rsConfig);
+            _lastDepthFrameNumber = 0;
+            _stuckDepthCount = 0;
+            _logger.info("RealSense pipeline restarted successfully");
+        }
+        catch (const rs2::error &e)
+        {
+            _logger.error("Failed to restart pipeline: %s", e.what());
+        }
+    }
+
     Logger &_logger;
     CameraConfig _config;
     bool _alignEnabled{true};
@@ -416,6 +470,8 @@ private:
     std::string _serial;
     std::string _identifier;
     CaptureMetadata _metadata;
+    unsigned long long _lastDepthFrameNumber{0};
+    int _stuckDepthCount{0};
 };
 
 class WebcamCamera : public CameraInterface
