@@ -417,8 +417,8 @@ bool LocalTacGlove::openSharedMemory()
     _shmFd = shm_open(kShmName, O_RDWR, 0666);
     if (_shmFd == -1)
     {
-        _logger.warn("LocalTacGlove: Cannot open shared memory '%s': %s",
-                     kShmName, strerror(errno));
+        // _logger.warn("LocalTacGlove: Cannot open shared memory '%s': %s",
+        //              kShmName, strerror(errno));
         return false;
     }
 

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <condition_variable>
+#include <deque>
 #include <cstring>
 #include <filesystem>
 #include <iomanip>
@@ -124,7 +125,9 @@ public:
     bool initialize(const CameraConfig &config) override
     {
         _config = config;
-        _alignEnabled = config.alignDepth;
+        _alignDepthEnabled = config.alignDepth;
+        _debugCapture = config.debugCapture;
+
         _filtersEnabled = config.enableFilters;
         if (_filtersEnabled)
         {
@@ -134,138 +137,23 @@ public:
             _spatialFilter.set_option(RS2_OPTION_HOLES_FILL, 3);
             _holeFillingFilter.set_option(RS2_OPTION_HOLES_FILL, 0);
         }
-        const int colorWidth = ensurePositive(config.color.width, ensurePositive(config.width, 640));
-        const int colorHeight = ensurePositive(config.color.height, ensurePositive(config.height, 480));
-        const int colorFps = ensurePositive(config.color.frameRate, ensurePositive(config.frameRate, 30));
-        const int depthWidth = ensurePositive(config.depth.width, colorWidth);
-        const int depthHeight = ensurePositive(config.depth.height, colorHeight);
-        const int depthFps = ensurePositive(config.depth.frameRate, colorFps);
+
+        const StreamSettings settings = resolveStreamSettings(config);
 
         try
         {
-            // Ensure any previous pipeline is stopped before starting a new one.
-            try
-            {
-                _pipeline.stop();
-            }
-            catch (const rs2::error &)
-            {
-                // ignore stop errors
-            }
-
-            _rsConfig.disable_all_streams();
-            if (!config.serial.empty())
-            {
-                _rsConfig.enable_device(config.serial);
-                _logger.info("Binding RealSense to serial %s", config.serial.c_str());
-            }
-            _rsConfig.enable_stream(RS2_STREAM_COLOR, colorWidth, colorHeight, RS2_FORMAT_YUYV, colorFps);
-            _logger.info("RealSense color stream: %dx%d @ %d FPS", colorWidth, colorHeight, colorFps);
-            _rsConfig.enable_stream(RS2_STREAM_DEPTH, depthWidth, depthHeight, RS2_FORMAT_Z16, depthFps);
-            _logger.info("RealSense depth stream: %dx%d @ %d FPS", depthWidth, depthHeight, depthFps);
-            auto profile = _pipeline.start(_rsConfig);
-            _logger.info("RealSense pipeline started");
-            _device = profile.get_device();
+            stopPipeline(false);
+            configureStreams(config, settings);
+            auto profile = startPipeline();
             auto dev = _device;
-            if (dev.supports(RS2_CAMERA_INFO_NAME))
-                _logger.info("RealSense device connected: %s", dev.get_info(RS2_CAMERA_INFO_NAME));
-            for (auto &&sensor : dev.query_sensors())
-            {
-                if (sensor.supports(RS2_OPTION_GLOBAL_TIME_ENABLED))
-                {
-                    sensor.set_option(RS2_OPTION_GLOBAL_TIME_ENABLED, 1.f);
-                    _logger.info("Enabled global time sync for sensor %s",
-                                 sensor.get_info(RS2_CAMERA_INFO_NAME));
-                }
-                if (auto depthSensor = sensor.as<rs2::depth_sensor>())
-                {
-                    _depthScale = depthSensor.get_depth_scale();
-                }
-            }
-            if (dev.supports(RS2_CAMERA_INFO_NAME))
-                _cameraName = dev.get_info(RS2_CAMERA_INFO_NAME);
-            if (dev.supports(RS2_CAMERA_INFO_SERIAL_NUMBER))
-                _serial = dev.get_info(RS2_CAMERA_INFO_SERIAL_NUMBER);
-            if (_serial.empty())
-                _identifier = _cameraName + "#" + std::to_string(config.id);
-            else
-                _identifier = "RealSense#" + _serial;
-            _running = true;
-            _logger.info("RealSense started: %s (serial=%s)", _cameraName.c_str(), _serial.c_str());
+            configureDevice(dev, config);
+
             auto colorProfile = profile.get_stream(RS2_STREAM_COLOR).as<rs2::video_stream_profile>();
             auto depthProfile = profile.get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>();
-            auto &intrMgr = IntrinsicsManager::instance();
-            if (auto existing = intrMgr.find(_identifier, "color", colorWidth, colorHeight))
-            {
-                _logger.info("Loaded cached intrinsics for %s color stream (%dx%d)",
-                             _identifier.c_str(), colorWidth, colorHeight);
-            }
-            else
-            {
-                auto intr = colorProfile.get_intrinsics();
-                StreamIntrinsics data;
-                data.stream = "color";
-                data.width = intr.width;
-                data.height = intr.height;
-                data.fx = intr.fx;
-                data.fy = intr.fy;
-                data.cx = intr.ppx;
-                data.cy = intr.ppy;
-                data.coeffs.assign(intr.coeffs, intr.coeffs + 5);
-                intrMgr.save(_identifier, data);
-            }
-            if (auto existingDepth = intrMgr.find(_identifier, "depth", depthWidth, depthHeight))
-            {
-                _logger.info("Loaded cached intrinsics for %s depth stream (%dx%d)",
-                             _identifier.c_str(), depthWidth, depthHeight);
-            }
-            else
-            {
-                auto intr = depthProfile.get_intrinsics();
-                StreamIntrinsics data;
-                data.stream = "depth";
-                data.width = intr.width;
-                data.height = intr.height;
-                data.fx = intr.fx;
-                data.fy = intr.fy;
-                data.cx = intr.ppx;
-                data.cy = intr.ppy;
-                data.coeffs.assign(intr.coeffs, intr.coeffs + 5);
-                intrMgr.save(_identifier, data);
-            }
-            rs2_extrinsics extrinsics = depthProfile.get_extrinsics_to(colorProfile);
-            _metadata = {};
-            _metadata.deviceId = _identifier;
-            _metadata.model = _cameraName;
-            _metadata.serial = _serial;
-            _metadata.aligned = _alignEnabled;
-            _metadata.depthScale = _depthScale;
-            _metadata.colorFps = colorFps;
-            _metadata.depthFps = depthFps;
-            _metadata.colorFormat = "YUYV";
-            _metadata.depthFormat = "Z16";
-            auto colorIntr = colorProfile.get_intrinsics();
-            _metadata.colorIntrinsics.stream = "color";
-            _metadata.colorIntrinsics.width = colorIntr.width;
-            _metadata.colorIntrinsics.height = colorIntr.height;
-            _metadata.colorIntrinsics.fx = colorIntr.fx;
-            _metadata.colorIntrinsics.fy = colorIntr.fy;
-            _metadata.colorIntrinsics.cx = colorIntr.ppx;
-            _metadata.colorIntrinsics.cy = colorIntr.ppy;
-            _metadata.colorIntrinsics.coeffs.assign(colorIntr.coeffs, colorIntr.coeffs + 5);
-            auto depthIntr = depthProfile.get_intrinsics();
-            _metadata.depthIntrinsics.stream = "depth";
-            _metadata.depthIntrinsics.width = depthIntr.width;
-            _metadata.depthIntrinsics.height = depthIntr.height;
-            _metadata.depthIntrinsics.fx = depthIntr.fx;
-            _metadata.depthIntrinsics.fy = depthIntr.fy;
-            _metadata.depthIntrinsics.cx = depthIntr.ppx;
-            _metadata.depthIntrinsics.cy = depthIntr.ppy;
-            _metadata.depthIntrinsics.coeffs.assign(depthIntr.coeffs, depthIntr.coeffs + 5);
-            std::copy(std::begin(extrinsics.rotation), std::end(extrinsics.rotation),
-                      _metadata.depthToColor.rotation.begin());
-            std::copy(std::begin(extrinsics.translation), std::end(extrinsics.translation),
-                      _metadata.depthToColor.translation.begin());
+            cacheIntrinsics("color", colorProfile, settings.colorWidth, settings.colorHeight);
+            cacheIntrinsics("depth", depthProfile, settings.depthWidth, settings.depthHeight);
+            populateMetadata(colorProfile, depthProfile, settings);
+            _running = true;
             return true;
         }
         catch (const rs2::error &e)
@@ -284,94 +172,41 @@ public:
 
         try
         {
-            rs2::frameset frames = _pipeline.wait_for_frames(15000);
-
-            // Apply filters BEFORE alignment to avoid artifacts/stripes.
-            // Filtering on raw depth data is more accurate.
-            if (_filtersEnabled)
+            rs2::frameset frames;
+            if (!waitForFrameset(frames))
             {
-                // Filters can process framesets directly (updating the depth frame inside)
-                frames = _spatialFilter.process(frames);
-                frames = _holeFillingFilter.process(frames);
-            }
-
-            rs2::frameset processed = _alignEnabled ? _align.process(frames) : frames;
-            rs2::video_frame color = processed.get_color_frame();
-            rs2::depth_frame depth = processed.get_depth_frame();
-
-            if (!color || !depth)
-            {
-                _logger.warn("RealSense: missing color or depth frame");
+                handleCaptureTimeout();
                 return data;
             }
-
-            const unsigned long long currentDepthNum = depth.get_frame_number();
-            const double currentDepthTs = depth.get_timestamp();
-            if (_lastDepthFrameNum != 0 && currentDepthNum == _lastDepthFrameNum)
+            double alignMs = 0.0;
+            rs2::frameset processed = frames;
+            if (_alignDepthEnabled)
             {
-                 _logger.warn("RealSense: STALE DEPTH FRAME DETECTED! Frame #%llu (TS: %.2f) matches previous.",
-                              currentDepthNum, currentDepthTs);
+                const auto t0 = std::chrono::steady_clock::now();
+                processed = _align.process(frames);
+                const auto t1 = std::chrono::steady_clock::now();
+                alignMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
             }
-            if (_lastDepthTs > 0.0 && std::abs(currentDepthTs - _lastDepthTs) < 0.001)
+            fillFrameData(processed, data);
+            if (_debugCapture && ++_debugCounter % _debugLogEvery == 0)
             {
-                 _logger.warn("RealSense: STALE DEPTH TIMESTAMP DETECTED! TS %.3f matches previous.", currentDepthTs);
+                const auto color = processed.get_color_frame();
+                const auto depth = processed.get_depth_frame();
+                if (color && depth)
+                {
+                    _logger.info("RealSense debug %s: color#=%llu depth#=%llu depth_ts=%.2f align_ms=%.2f queue=%zu",
+                                 _identifier.c_str(),
+                                 static_cast<unsigned long long>(color.get_frame_number()),
+                                 static_cast<unsigned long long>(depth.get_frame_number()),
+                                 depth.get_timestamp(),
+                                 alignMs,
+                                 frameQueueSize());
+                }
             }
-            _lastDepthFrameNum = currentDepthNum;
-            _lastDepthTs = currentDepthTs;
-
-            auto colorHolder = std::make_shared<rs2::video_frame>(color);
-            auto depthHolder = std::make_shared<rs2::depth_frame>(depth);
-            cv::Mat colorMat(cv::Size(colorHolder->get_width(), colorHolder->get_height()), CV_8UC2,
-                             const_cast<void *>(colorHolder->get_data()), cv::Mat::AUTO_STEP);
-            cv::Mat depthMat(cv::Size(depthHolder->get_width(), depthHolder->get_height()), CV_16U,
-                             const_cast<void *>(depthHolder->get_data()), cv::Mat::AUTO_STEP);
-
-            data.image = colorMat;
-            // Perform deep copy for depth to ensure data stability during storage queueing.
-            // This prevents issues where the SDK might reuse the underlying buffer for subsequent frames
-            // while this frame is still waiting in the write queue.
-            data.depth = depthMat.clone();
-            data.imageOwner = colorHolder;
-            data.depthOwner = nullptr; // Depth data is now owned by cv::Mat
-            data.timestamp = std::chrono::system_clock::now();
-            data.deviceTimestampMs = static_cast<int64_t>(color.get_timestamp());
-            data.cameraId = _identifier;
-            data.colorFormat = "YUYV";
         }
         catch (const rs2::error &e)
         {
-            _logger.error("RealSense capture failed: %s", e.what());
-            // Attempt a restart (with optional hardware reset) on timeouts or pipeline errors if still running
-            if (_running)
-            {
-                const std::string msg = e.what();
-                const bool timeout = msg.find("Frame didn't arrive") != std::string::npos ||
-                                     msg.find("Timeout") != std::string::npos ||
-                                     msg.find("timeout") != std::string::npos;
-                try
-                {
-                    _pipeline.stop();
-                }
-                catch (const rs2::error &)
-                {
-                }
-                try
-                {
-                    if (timeout && _device)
-                    {
-                        _logger.info("RealSense: hardware reset before restart for %s", name().c_str());
-                        _device.hardware_reset();
-                        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-                    }
-                    auto profile = _pipeline.start(_rsConfig);
-                    _device = profile.get_device();
-                    _logger.info("RealSense pipeline restarted for %s (timeout=%d)", name().c_str(), timeout ? 1 : 0);
-                }
-                catch (const rs2::error &re)
-                {
-                    _logger.warn("RealSense restart failed: %s", re.what());
-                }
-            }
+            handleCaptureError(e);
         }
         return data;
     }
@@ -380,14 +215,7 @@ public:
     {
         if (!_running)
             return;
-        try
-        {
-            _pipeline.stop();
-        }
-        catch (const rs2::error &e)
-        {
-            _logger.warn("RealSense stop failed: %s", e.what());
-        }
+        stopPipeline(true);
         _running = false;
         _logger.info("RealSense camera closed");
     }
@@ -439,9 +267,300 @@ public:
     CaptureMetadata captureMetadata() const override;
 
 private:
+    struct StreamSettings
+    {
+        int colorWidth{0};
+        int colorHeight{0};
+        int colorFps{0};
+        int depthWidth{0};
+        int depthHeight{0};
+        int depthFps{0};
+    };
+
+    static constexpr int kFrameTimeoutMs = 15000;
+
+    StreamSettings resolveStreamSettings(const CameraConfig &config) const
+    {
+        StreamSettings settings;
+        settings.colorWidth = ensurePositive(config.color.width, ensurePositive(config.width, 640));
+        settings.colorHeight = ensurePositive(config.color.height, ensurePositive(config.height, 480));
+        settings.colorFps = ensurePositive(config.color.frameRate, ensurePositive(config.frameRate, 30));
+        settings.depthWidth = ensurePositive(config.depth.width, settings.colorWidth);
+        settings.depthHeight = ensurePositive(config.depth.height, settings.colorHeight);
+        settings.depthFps = ensurePositive(config.depth.frameRate, settings.colorFps);
+        return settings;
+    }
+
+    void stopPipeline(bool logError)
+    {
+        try
+        {
+            _pipeline.stop();
+        }
+        catch (const rs2::error &e)
+        {
+            if (logError)
+                _logger.warn("RealSense stop failed: %s", e.what());
+        }
+        clearFrameQueue();
+        _frameCv.notify_all();
+    }
+
+    void configureStreams(const CameraConfig &config, const StreamSettings &settings)
+    {
+        _rsConfig.disable_all_streams();
+        if (!config.serial.empty())
+        {
+            _rsConfig.enable_device(config.serial);
+            _logger.info("Binding RealSense to serial %s", config.serial.c_str());
+        }
+        _rsConfig.enable_stream(RS2_STREAM_COLOR,
+                                settings.colorWidth,
+                                settings.colorHeight,
+                                RS2_FORMAT_YUYV,
+                                settings.colorFps);
+        _logger.info("RealSense color stream: %dx%d @ %d FPS",
+                     settings.colorWidth,
+                     settings.colorHeight,
+                     settings.colorFps);
+        _rsConfig.enable_stream(RS2_STREAM_DEPTH,
+                                settings.depthWidth,
+                                settings.depthHeight,
+                                RS2_FORMAT_Z16,
+                                settings.depthFps);
+        _logger.info("RealSense depth stream: %dx%d @ %d FPS",
+                     settings.depthWidth,
+                     settings.depthHeight,
+                     settings.depthFps);
+    }
+
+    rs2::pipeline_profile startPipeline()
+    {
+        auto profile = _pipeline.start(_rsConfig, [this](const rs2::frame &frame) { onFrame(frame); });
+        _logger.info("RealSense pipeline started");
+        _device = profile.get_device();
+        return profile;
+    }
+
+    void onFrame(const rs2::frame &frame)
+    {
+        auto frameset = frame.as<rs2::frameset>();
+        if (!frameset)
+            return;
+
+        std::lock_guard<std::mutex> lock(_frameMutex);
+        if (_frameQueue.size() >= _maxFrameQueue)
+        {
+            if (!_frameDropWarned)
+            {
+                _logger.warn("RealSense frame queue full for %s; dropping oldest frames", name().c_str());
+                _frameDropWarned = true;
+            }
+            _frameQueue.pop_front();
+        }
+        _frameQueue.push_back(frameset);
+        _frameCv.notify_one();
+    }
+
+    void configureDevice(const rs2::device &dev, const CameraConfig &config)
+    {
+        if (dev.supports(RS2_CAMERA_INFO_NAME))
+            _logger.info("RealSense device connected: %s", dev.get_info(RS2_CAMERA_INFO_NAME));
+        for (auto &&sensor : dev.query_sensors())
+        {
+            if (sensor.supports(RS2_OPTION_GLOBAL_TIME_ENABLED))
+            {
+                sensor.set_option(RS2_OPTION_GLOBAL_TIME_ENABLED, 1.f);
+                _logger.info("Enabled global time sync for sensor %s",
+                             sensor.get_info(RS2_CAMERA_INFO_NAME));
+            }
+            if (auto depthSensor = sensor.as<rs2::depth_sensor>())
+            {
+                _depthScale = depthSensor.get_depth_scale();
+            }
+        }
+        if (dev.supports(RS2_CAMERA_INFO_NAME))
+            _cameraName = dev.get_info(RS2_CAMERA_INFO_NAME);
+        if (dev.supports(RS2_CAMERA_INFO_SERIAL_NUMBER))
+            _serial = dev.get_info(RS2_CAMERA_INFO_SERIAL_NUMBER);
+        if (_serial.empty())
+            _identifier = _cameraName + "#" + std::to_string(config.id);
+        else
+            _identifier = "RealSense#" + _serial;
+        _logger.info("RealSense started: %s (serial=%s)", _cameraName.c_str(), _serial.c_str());
+    }
+
+    void cacheIntrinsics(const std::string &streamName,
+                         const rs2::video_stream_profile &profile,
+                         int width,
+                         int height)
+    {
+        auto &intrMgr = IntrinsicsManager::instance();
+        if (intrMgr.find(_identifier, streamName, width, height))
+        {
+            _logger.info("Loaded cached intrinsics for %s %s stream (%dx%d)",
+                         _identifier.c_str(),
+                         streamName.c_str(),
+                         width,
+                         height);
+            return;
+        }
+
+        auto intr = profile.get_intrinsics();
+        StreamIntrinsics data;
+        data.stream = streamName;
+        data.width = intr.width;
+        data.height = intr.height;
+        data.fx = intr.fx;
+        data.fy = intr.fy;
+        data.cx = intr.ppx;
+        data.cy = intr.ppy;
+        data.coeffs.assign(intr.coeffs, intr.coeffs + 5);
+        intrMgr.save(_identifier, data);
+    }
+
+    void populateMetadata(const rs2::video_stream_profile &colorProfile,
+                          const rs2::video_stream_profile &depthProfile,
+                          const StreamSettings &settings)
+    {
+        rs2_extrinsics extrinsics = depthProfile.get_extrinsics_to(colorProfile);
+        _metadata = {};
+        _metadata.deviceId = _identifier;
+        _metadata.model = _cameraName;
+        _metadata.serial = _serial;
+        _metadata.aligned = _alignDepthEnabled;
+        _metadata.depthScale = _depthScale;
+        _metadata.colorFps = settings.colorFps;
+        _metadata.depthFps = settings.depthFps;
+        _metadata.colorFormat = "YUYV";
+        _metadata.depthFormat = "Z16";
+
+        auto colorIntr = colorProfile.get_intrinsics();
+        _metadata.colorIntrinsics.stream = "color";
+        _metadata.colorIntrinsics.width = colorIntr.width;
+        _metadata.colorIntrinsics.height = colorIntr.height;
+        _metadata.colorIntrinsics.fx = colorIntr.fx;
+        _metadata.colorIntrinsics.fy = colorIntr.fy;
+        _metadata.colorIntrinsics.cx = colorIntr.ppx;
+        _metadata.colorIntrinsics.cy = colorIntr.ppy;
+        _metadata.colorIntrinsics.coeffs.assign(colorIntr.coeffs, colorIntr.coeffs + 5);
+
+        auto depthIntr = depthProfile.get_intrinsics();
+        _metadata.depthIntrinsics.stream = "depth";
+        _metadata.depthIntrinsics.width = depthIntr.width;
+        _metadata.depthIntrinsics.height = depthIntr.height;
+        _metadata.depthIntrinsics.fx = depthIntr.fx;
+        _metadata.depthIntrinsics.fy = depthIntr.fy;
+        _metadata.depthIntrinsics.cx = depthIntr.ppx;
+        _metadata.depthIntrinsics.cy = depthIntr.ppy;
+        _metadata.depthIntrinsics.coeffs.assign(depthIntr.coeffs, depthIntr.coeffs + 5);
+
+        std::copy(std::begin(extrinsics.rotation), std::end(extrinsics.rotation),
+                  _metadata.depthToColor.rotation.begin());
+        std::copy(std::begin(extrinsics.translation), std::end(extrinsics.translation),
+                  _metadata.depthToColor.translation.begin());
+    }
+
+    bool fillFrameData(const rs2::frameset &processed, FrameData &data)
+    {
+        rs2::video_frame color = processed.get_color_frame();
+        rs2::depth_frame depth = processed.get_depth_frame();
+
+        if (!color || !depth)
+        {
+            _logger.warn("RealSense: missing color or depth frame");
+            return false;
+        }
+
+        auto colorHolder = std::make_shared<rs2::video_frame>(color);
+        auto depthHolder = std::make_shared<rs2::depth_frame>(depth);
+        cv::Mat colorMat(cv::Size(colorHolder->get_width(), colorHolder->get_height()), CV_8UC2,
+                         const_cast<void *>(colorHolder->get_data()), cv::Mat::AUTO_STEP);
+        cv::Mat depthMat(cv::Size(depthHolder->get_width(), depthHolder->get_height()), CV_16U,
+                         const_cast<void *>(depthHolder->get_data()), cv::Mat::AUTO_STEP);
+
+        data.image = colorMat;
+        data.depth = depthMat;
+        data.imageOwner = colorHolder;
+        data.depthOwner = depthHolder;
+        data.timestamp = std::chrono::system_clock::now();
+        data.deviceTimestampMs = static_cast<int64_t>(color.get_timestamp());
+        data.cameraId = _identifier;
+        data.colorFormat = "YUYV";
+        return true;
+    }
+
+    bool waitForFrameset(rs2::frameset &out)
+    {
+        std::unique_lock<std::mutex> lock(_frameMutex);
+        const bool ready = _frameCv.wait_for(
+            lock,
+            std::chrono::milliseconds(kFrameTimeoutMs),
+            [&]() { return !_frameQueue.empty() || !_running; });
+        if (!ready || _frameQueue.empty())
+            return false;
+        out = std::move(_frameQueue.front());
+        _frameQueue.pop_front();
+        return true;
+    }
+
+    void clearFrameQueue()
+    {
+        std::lock_guard<std::mutex> lock(_frameMutex);
+        _frameQueue.clear();
+    }
+
+    size_t frameQueueSize()
+    {
+        std::lock_guard<std::mutex> lock(_frameMutex);
+        return _frameQueue.size();
+    }
+
+    void handleCaptureTimeout()
+    {
+        _logger.error("RealSense capture timeout: no frames for %d ms", kFrameTimeoutMs);
+        if (_running)
+            restartPipeline(true);
+    }
+
+    bool isTimeoutError(const rs2::error &e) const
+    {
+        const std::string msg = e.what();
+        return msg.find("Frame didn't arrive") != std::string::npos ||
+               msg.find("Timeout") != std::string::npos ||
+               msg.find("timeout") != std::string::npos;
+    }
+
+    void restartPipeline(bool timeout)
+    {
+        stopPipeline(false);
+        try
+        {
+            if (timeout && _device)
+            {
+                _logger.info("RealSense: hardware reset before restart for %s", name().c_str());
+                _device.hardware_reset();
+                std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+            }
+            auto profile = startPipeline();
+            _logger.info("RealSense pipeline restarted for %s (timeout=%d)", name().c_str(), timeout ? 1 : 0);
+        }
+        catch (const rs2::error &re)
+        {
+            _logger.warn("RealSense restart failed: %s", re.what());
+        }
+    }
+
+    void handleCaptureError(const rs2::error &e)
+    {
+        _logger.error("RealSense capture failed: %s", e.what());
+        if (_running)
+            restartPipeline(isTimeoutError(e));
+    }
+
     Logger &_logger;
     CameraConfig _config;
-    bool _alignEnabled{true};
+    bool _alignDepthEnabled{true};
     rs2::pipeline _pipeline;
     rs2::config _rsConfig;
     rs2::align _align;
@@ -449,14 +568,20 @@ private:
     rs2::hole_filling_filter _holeFillingFilter;
     bool _filtersEnabled{false};
     rs2::device _device;
+    std::mutex _frameMutex;
+    std::condition_variable _frameCv;
+    std::deque<rs2::frameset> _frameQueue;
+    bool _frameDropWarned{false};
     double _depthScale{0.0};
     bool _running{false};
+    bool _debugCapture{false};
+    uint64_t _debugCounter{0};
     std::string _cameraName{"RealSense"};
     std::string _serial;
     std::string _identifier;
     CaptureMetadata _metadata;
-    unsigned long long _lastDepthFrameNum{0};
-    double _lastDepthTs{0.0};
+    static constexpr size_t _maxFrameQueue = 120;
+    static constexpr uint64_t _debugLogEvery = 60;
 };
 
 class WebcamCamera : public CameraInterface
@@ -617,6 +742,15 @@ public:
 
         {
             std::lock_guard<std::mutex> lock(_mutex);
+            if (_queue.size() >= _maxQueueSize)
+            {
+                if (!_dropWarned)
+                {
+                    _logger.warn("Writer queue full for %s; dropping oldest frames", _deviceId.c_str());
+                    _dropWarned = true;
+                }
+                _queue.pop();
+            }
             _queue.push(std::move(copy));
         }
         _cv.notify_one();
@@ -1157,6 +1291,7 @@ private:
     std::mutex _callbackMutex;
     std::condition_variable _cv;
     std::queue<FrameData> _queue;
+    bool _dropWarned{false};
     bool _stopped{false};
     std::thread _worker;
     std::filesystem::path _cameraDir;
@@ -1188,6 +1323,7 @@ private:
     uint64_t _depthAllocSize{0};
     static constexpr uint64_t _depthExtendStep = 100;
     static constexpr uint64_t _perfLogEvery = 100;
+    static constexpr size_t _maxQueueSize = 200;
     uint64_t _perfCount{0};
     double _perfRgbMs{0.0};
     double _perfDepthMs{0.0};
@@ -1271,6 +1407,6 @@ std::unique_ptr<FrameWriter> RealSenseCamera::makeWriter(const std::string &base
 CaptureMetadata RealSenseCamera::captureMetadata() const
 {
     CaptureMetadata meta = _metadata;
-    meta.aligned = _alignEnabled;
+    meta.aligned = _alignDepthEnabled;
     return meta;
 }

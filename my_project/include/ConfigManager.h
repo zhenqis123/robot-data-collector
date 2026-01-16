@@ -48,6 +48,7 @@ struct CameraConfig
     int height = 0;
     int frameRate = 0;
     bool alignDepth{true};
+    bool debugCapture{false};
     bool enableFilters{false};
     
     // Generic settings for non-camera devices
@@ -60,7 +61,7 @@ struct CameraConfig
         int height = 0;
         int frameRate = 0;
         int chunkSize = 0;
-        int bitrateKbps = 8000;
+        int bitrateKbps = 15000;
         StreamType streamType = StreamType::Color;
     };
     StreamConfig color;
