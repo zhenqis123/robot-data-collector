@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import gc
 import json
 import os
 import multiprocessing as mp
@@ -84,6 +85,7 @@ def process_capture_worker(job: Dict[str, object]) -> Dict[str, object]:
     capture_root = meta_path.parent
     tag_map_path = Path(str(job["tag_map_path"]))
     args = job["args"]
+    detector = None
     try:
         if should_skip_step(capture_root, "camera_poses_apriltag"):
             return {
@@ -148,6 +150,10 @@ def process_capture_worker(job: Dict[str, object]) -> Dict[str, object]:
             "status": "failed",
             "message": f"exception: {exc}",
         }
+    finally:
+        if detector is not None:
+            detector = None
+            gc.collect()
 
 
 def rotation_matrix_to_rvec(R: np.ndarray) -> np.ndarray:
@@ -502,20 +508,19 @@ def process_capture(
     capture_total: int,
 ) -> bool:
     output_json_name = output_name
-    frames_csv = capture_root / "frames_aligned.csv"
-    if not frames_csv.exists():
-        console.print(f"[pose] missing frames_aligned.csv in {capture_root}")
-        return False
-    if should_skip_step(capture_root, "camera_poses_apriltag"):
-        console.print(f"[pose] skip {capture_root}, already processed")
-        return False
-
     with meta_path.open("r") as f:
         meta = json.load(f)
     cam_ids_raw = [c.get("id") for c in meta.get("cameras", []) if c.get("id") is not None]
     cam_ids = [cid for cid in cam_ids_raw if is_realsense_id(str(cid))]
     if not cam_ids:
-        console.print(f"[pose] no cameras in {capture_root}")
+        console.print(f"[pose] skip {capture_root}, no RealSense cameras")
+        return False
+    if should_skip_step(capture_root, "camera_poses_apriltag"):
+        console.print(f"[pose] skip {capture_root}, already processed")
+        return False
+    frames_csv = capture_root / "frames_aligned.csv"
+    if not frames_csv.exists():
+        console.print(f"[pose] missing frames_aligned.csv in {capture_root}")
         return False
     intrinsics = load_intrinsics(meta_path)
     aligned_video_name = resolve_aligned_output_name(capture_root, [str(cid) for cid in cam_ids])
@@ -909,6 +914,8 @@ def main() -> int:
                 )
                 any_processed = True
                 any_written = any_written or wrote
+        detector = None
+        gc.collect()
     if any_processed and not any_written:
         return 0
     return 0 if any_written else 1
