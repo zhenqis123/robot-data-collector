@@ -79,3 +79,4 @@ third_party/*
 rsync.sh
 zip.sh
 test_opencv.sh
+my_project/resources/config.json
