@@ -4,7 +4,7 @@ Video utility:
 - Encode color PNG sequences or MKV videos to H.264 MP4 for all cameras in a capture
 
 Usage:
-  python -m tools.videos /path/to/capture_root --fps 30 --output-name color.mp4
+  python -m tools.videos /path/to/capture_root --fps 30 --output-name color_aligned.mp4
 """
 from __future__ import annotations
 
@@ -124,50 +124,30 @@ def read_camera_timestamps(csv_path: Path) -> Tuple[List[float], List[int]]:
         return timestamps, indices
     with csv_path.open("r", newline="") as f:
         reader = csv.DictReader(f)
-        fieldnames = reader.fieldnames or []
-        has_color_fields = "color_timestamp_ms" in fieldnames or "color_frame_index" in fieldnames
         counter = 0
         for row in reader:
-            if has_color_fields:
-                ts_val = row.get("color_timestamp_ms", "")
-                if ts_val == "":
-                    continue
+            ts_val = row.get("timestamp_ms", "")
+            if ts_val == "":
+                continue
+            try:
+                ts = float(ts_val)
+            except ValueError:
+                continue
+            frame_index = row.get("frame_index", "")
+            idx = None
+            if frame_index:
                 try:
-                    ts = float(ts_val)
+                    idx = int(frame_index)
                 except ValueError:
-                    continue
-                idx = None
-                frame_index = row.get("color_frame_index", "")
-                if frame_index:
-                    try:
-                        idx = int(frame_index)
-                    except ValueError:
-                        idx = None
-                if idx is None:
-                    continue
-            else:
-                ts_val = row.get("timestamp_ms", "")
-                if ts_val == "":
-                    continue
-                try:
-                    ts = float(ts_val)
-                except ValueError:
-                    continue
-                frame_index = row.get("frame_index", "")
-                idx = None
-                if frame_index:
-                    try:
-                        idx = int(frame_index)
-                    except ValueError:
-                        idx = None
-                if idx is None:
-                    color_path = row.get("color_path", "") or row.get("rgb_path", "")
-                    stem = Path(color_path).stem
-                    if stem.isdigit():
-                        idx = int(stem)
-                if idx is None:
-                    counter += 1
-                    idx = counter
+                    idx = None
+            if idx is None:
+                color_path = row.get("color_path", "") or row.get("rgb_path", "")
+                stem = Path(color_path).stem
+                if stem.isdigit():
+                    idx = int(stem)
+            if idx is None:
+                counter += 1
+                idx = counter
             timestamps.append(ts)
             indices.append(idx)
     return timestamps, indices
@@ -279,6 +259,29 @@ def encode_video_from_alignment(
         raise RuntimeError("Missing timestamps for aligned encode")
     if not aligned_indices and (not cam_timestamps or not cam_indices):
         raise RuntimeError("Missing timestamps for aligned encode")
+    desired_indices: List[int] = []
+    for i, ts in enumerate(ref_timestamps):
+        if aligned_indices:
+            frame_index = aligned_indices[i]
+        else:
+            idx = nearest_frame_index(cam_timestamps, ts)
+            if idx is None:
+                frame_index = 0
+            else:
+                frame_index = cam_indices[idx]
+        desired_indices.append(int(frame_index) if frame_index else 0)
+    if not desired_indices:
+        raise RuntimeError("No aligned frame indices available")
+
+    non_decreasing = True
+    last_seen = 0
+    for idx in desired_indices:
+        if idx <= 0:
+            continue
+        if idx < last_seen:
+            non_decreasing = False
+            break
+        last_seen = idx
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError(f"Failed to open video {video_path}")
@@ -290,22 +293,49 @@ def encode_video_from_alignment(
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(str(output), fourcc, fps, (w, h))
     count = 0
-    for i, ts in enumerate(tqdm(ref_timestamps, desc=f"align {output.name}", unit="frame", leave=False)):
-        if aligned_indices:
-            frame_index = aligned_indices[i]
-        else:
-            idx = nearest_frame_index(cam_timestamps, ts)
-            if idx is None:
-                continue
-            frame_index = cam_indices[idx]
-        if frame_index <= 0:
-            continue
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index - 1)
-        ok, frame = cap.read()
-        if not ok:
-            continue
-        writer.write(frame)
-        count += 1
+    if any(idx <= 0 for idx in desired_indices):
+        cap.release()
+        writer.release()
+        raise RuntimeError(f"Invalid aligned frame indices for {output.name}")
+
+    if non_decreasing:
+        next_idx = 0
+        current_frame_index = 0
+        last_frame = None
+        pbar = tqdm(total=len(desired_indices), desc=f"align {output.name}", unit="frame", leave=False)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        while next_idx < len(desired_indices):
+            target_index = desired_indices[next_idx]
+            while current_frame_index < target_index:
+                ok, frame = cap.read()
+                if not ok:
+                    cap.release()
+                    writer.release()
+                    raise RuntimeError(f"Failed to read frame {target_index} from {video_path}")
+                current_frame_index += 1
+                last_frame = frame
+            if last_frame is None or current_frame_index < target_index:
+                cap.release()
+                writer.release()
+                raise RuntimeError(f"Missing frame {target_index} in {video_path}")
+            while next_idx < len(desired_indices) and desired_indices[next_idx] == target_index:
+                writer.write(last_frame)
+                count += 1
+                next_idx += 1
+                pbar.update(1)
+        pbar.close()
+    else:
+        for i, _ in enumerate(tqdm(ref_timestamps, desc=f"align {output.name}", unit="frame", leave=False)):
+            frame_index = desired_indices[i]
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index - 1)
+            ok, frame = cap.read()
+            if not ok:
+                cap.release()
+                writer.release()
+                raise RuntimeError(f"Failed to read frame {frame_index} from {video_path}")
+            writer.write(frame)
+            count += 1
+
     cap.release()
     writer.release()
     print(f"[videos] wrote {output} from {count} aligned frames")
@@ -349,9 +379,9 @@ def auto_process(root: Path, fps: float, output_name: str) -> None:
                 if video_path.resolve() == out.resolve():
                     print(f"[videos] skip {cid}: output matches source {video_path.name}")
                     continue
-                if aligned_rows and ref_cam and cid != ref_cam and ref_timestamps:
+                if aligned_rows and ref_cam and ref_timestamps:
                     aligned_indices = []
-                    key = f"{cid}_frame_index"
+                    key = "ref_frame_index" if cid == ref_cam else f"{cid}_frame_index"
                     for row in valid_rows:
                         value = row.get(key, "")
                         if value == "":
@@ -422,10 +452,7 @@ def load_ref_timestamps(root: Path) -> Tuple[List[float], str]:
                     reader = csv.DictReader(f)
                     ts_list = []
                     for row in reader:
-                        if "color_timestamp_ms" in (reader.fieldnames or []):
-                            value = row.get("color_timestamp_ms", "")
-                        else:
-                            value = row.get("timestamp_ms", "")
+                        value = row.get("timestamp_ms", "")
                         if value == "":
                             continue
                         try:
@@ -515,7 +542,8 @@ def main():
     parser = argparse.ArgumentParser(description="Encode color frames to MP4 for all cameras in a capture")
     parser.add_argument("root", help="Root directory containing capture folders or meta.json")
     parser.add_argument("--fps", type=float, default=30.0, help="Frames per second")
-    parser.add_argument("--output-name", default="color.mp4", help="Output video filename per camera")
+    parser.add_argument("--output-name", default="color_aligned.mp4",
+                        help="Output video filename per camera (aligned)")
     parser.add_argument("--find-meta", type=str, default="true",
                         choices=["true", "false"],
                         help="Search meta.json recursively (true) or only root/*/meta.json (false)")

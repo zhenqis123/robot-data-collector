@@ -13,6 +13,7 @@ import argparse
 import json
 import math
 import os
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -50,6 +51,41 @@ def list_meta_files(root: Path, find_meta: bool, max_depth: int = 2) -> List[Pat
         if meta.exists():
             result.append(meta)
     return result
+
+
+def should_skip_step(capture_root: Path, step: str) -> bool:
+    marker_path = capture_root / "postprocess_markers.json"
+    if not marker_path.exists():
+        return False
+    try:
+        payload = json.loads(marker_path.read_text())
+    except json.JSONDecodeError:
+        return False
+    steps = payload.get("steps")
+    if not isinstance(steps, dict):
+        return False
+    return step in steps
+
+
+def update_marker(capture_root: Path, step: str, info: Dict) -> None:
+    marker_path = capture_root / "postprocess_markers.json"
+    payload = {}
+    if marker_path.exists():
+        try:
+            payload = json.loads(marker_path.read_text())
+        except json.JSONDecodeError:
+            payload = {}
+    steps = payload.get("steps")
+    if not isinstance(steps, dict):
+        steps = {}
+    done_at = datetime.now(timezone.utc).isoformat()
+    entry = dict(info)
+    entry["done_at"] = done_at
+    steps[step] = entry
+    payload["steps"] = steps
+    payload["updated_at"] = done_at
+    marker_path.write_text(json.dumps(payload, indent=2))
+    print(f"[post] updated marker {marker_path}")
 
 
 def rotation_matrix_to_quaternion(R: np.ndarray) -> np.ndarray:
@@ -513,11 +549,16 @@ def main() -> int:
         return 1
 
     wrote_any = False
+    any_processed = False
     for meta in metas:
         capture_root = meta.parent
         poses_path = capture_root / args.poses_name
         if not poses_path.exists():
             print(f"[post] skip {capture_root}, missing {poses_path.name}")
+            continue
+        if should_skip_step(capture_root, "postprocess_camera_poses"):
+            print(f"[post] skip {capture_root}, already processed")
+            any_processed = True
             continue
         output_path = capture_root / args.output_name
         wrote = postprocess_capture(
@@ -537,7 +578,31 @@ def main() -> int:
             args.smooth_poly,
             args.no_smooth,
         )
+        if wrote:
+            update_marker(
+                capture_root,
+                "postprocess_camera_poses",
+                {
+                    "input": poses_path.name,
+                    "output": output_path.name,
+                    "reproj_metric": args.reproj_metric,
+                    "reproj_threshold": args.reproj_threshold,
+                    "max_gap": args.max_gap,
+                    "max_trans_m": args.max_trans_m,
+                    "max_rot_deg": args.max_rot_deg,
+                    "hampel_window": args.hampel_window,
+                    "hampel_k": args.hampel_k,
+                    "hampel_rot_k": args.hampel_rot_k,
+                    "no_hampel": args.no_hampel,
+                    "smooth_window": args.smooth_window,
+                    "smooth_poly": args.smooth_poly,
+                    "no_smooth": args.no_smooth,
+                },
+            )
         wrote_any = wrote_any or wrote
+        any_processed = True
+    if any_processed and not wrote_any:
+        return 0
     return 0 if wrote_any else 1
 
 

@@ -17,6 +17,7 @@ import argparse
 import csv
 import json
 import os
+import multiprocessing as mp
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,6 +50,7 @@ OBJECT_POINTS = np.array(
 )
 
 VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".mov"}
+DEFAULT_ALIGNED_NAME = "color_aligned.mp4"
 
 
 @dataclass
@@ -64,6 +66,88 @@ class PoseResult:
     tvec_w_c: Optional[np.ndarray] = None
     quat_wxyz: Optional[np.ndarray] = None
     reproj_stats: Optional[Dict[str, float]] = None
+
+
+class NullProgress:
+    def add_task(self, description: str, total: int = 0) -> int:
+        return 0
+
+    def advance(self, task_id: int, advance: int = 1) -> None:
+        return None
+
+    def remove_task(self, task_id: int) -> None:
+        return None
+
+
+def process_capture_worker(job: Dict[str, object]) -> Dict[str, object]:
+    meta_path = Path(str(job["meta_path"]))
+    capture_root = meta_path.parent
+    tag_map_path = Path(str(job["tag_map_path"]))
+    args = job["args"]
+    try:
+        if should_skip_step(capture_root, "camera_poses_apriltag"):
+            return {
+                "capture_root": str(capture_root),
+                "ok": False,
+                "status": "skipped",
+                "message": "already processed",
+            }
+        if not (capture_root / "frames_aligned.csv").exists():
+            return {
+                "capture_root": str(capture_root),
+                "ok": False,
+                "status": "skipped",
+                "message": "missing frames_aligned.csv",
+            }
+        family, tag_length, tag_poses = read_tag_map(tag_map_path)
+        threads = args["threads"] if args["threads"] > 0 else max(1, cv2.getNumberOfCPUs())
+        detector = Detector(
+            families=family,
+            nthreads=threads,
+            quad_decimate=args["decimate"],
+            quad_sigma=args["sigma"],
+            refine_edges=True,
+        )
+        pnp_flags = {
+            "iterative": cv2.SOLVEPNP_ITERATIVE,
+            "ippe": cv2.SOLVEPNP_IPPE,
+            "ippe_square": cv2.SOLVEPNP_IPPE_SQUARE,
+        }
+        pnp_flag = pnp_flags[args["pnp_method"]]
+
+        console = Console()
+        progress = NullProgress()
+        ok = process_capture(
+            capture_root,
+            meta_path,
+            tag_map_path,
+            detector,
+            tag_length,
+            tag_poses,
+            args["output_name"],
+            args["pnp_reproj"],
+            args["pnp_iterations"],
+            args["pnp_confidence"],
+            not args["no_ransac"],
+            pnp_flag,
+            progress,
+            console,
+            int(job["index"]),
+            int(job["total"]),
+        )
+        return {
+            "capture_root": str(capture_root),
+            "ok": bool(ok),
+            "status": "ok" if ok else "failed",
+            "message": "done" if ok else "skipped or failed",
+        }
+    except Exception as exc:
+        return {
+            "capture_root": str(capture_root),
+            "ok": False,
+            "status": "failed",
+            "message": f"exception: {exc}",
+        }
 
 
 def rotation_matrix_to_rvec(R: np.ndarray) -> np.ndarray:
@@ -173,10 +257,6 @@ def list_meta_files(root: Path, find_meta: bool, max_depth: int = 2) -> List[Pat
     if find_meta:
         result: List[Path] = []
         for dirpath, dirnames, filenames in os.walk(root):
-            # Optimization: skip common non-camera folders
-            if "Glove" in Path(dirpath).name or "Tracker" in Path(dirpath).name or "tactile" in Path(dirpath).name or "glove" in Path(dirpath).name:
-                continue
-
             depth = len(Path(dirpath).relative_to(root).parts)
             if depth > max_depth:
                 dirnames[:] = []
@@ -188,13 +268,40 @@ def list_meta_files(root: Path, find_meta: bool, max_depth: int = 2) -> List[Pat
     for child in sorted(root.iterdir()):
         if not child.is_dir():
             continue
-        # Skip tactile/glove folders at root level too
-        if "Glove" in child.name or "Tracker" in child.name or "tactile" in child.name or "glove" in child.name:
-            continue
         meta = child / "meta.json"
         if meta.exists():
             result.append(meta)
     return result
+
+
+def read_encode_output_name(capture_root: Path) -> str:
+    marker_path = capture_root / "postprocess_markers.json"
+    if not marker_path.exists():
+        return ""
+    try:
+        payload = json.loads(marker_path.read_text())
+    except json.JSONDecodeError:
+        return ""
+    steps = payload.get("steps")
+    if not isinstance(steps, dict):
+        return ""
+    entry = steps.get("encode_videos")
+    if not isinstance(entry, dict):
+        return ""
+    output_name = entry.get("output_name", "")
+    return str(output_name) if output_name else ""
+
+
+def resolve_aligned_output_name(capture_root: Path, cam_ids: List[str]) -> str:
+    output_name = read_encode_output_name(capture_root)
+    if output_name:
+        return output_name
+    fallback = DEFAULT_ALIGNED_NAME
+    for cid in cam_ids:
+        cam_dir = capture_root / sanitize_camera_id(str(cid))
+        if not (cam_dir / fallback).exists():
+            return ""
+    return fallback
 
 
 def count_csv_rows(csv_path: Path) -> int:
@@ -391,6 +498,7 @@ def process_capture(
     capture_index: int,
     capture_total: int,
 ) -> bool:
+    output_json_name = output_name
     frames_csv = capture_root / "frames_aligned.csv"
     if not frames_csv.exists():
         console.print(f"[pose] missing frames_aligned.csv in {capture_root}")
@@ -406,6 +514,16 @@ def process_capture(
         console.print(f"[pose] no cameras in {capture_root}")
         return False
     intrinsics = load_intrinsics(meta_path)
+    aligned_video_name = resolve_aligned_output_name(capture_root, [str(cid) for cid in cam_ids])
+    aligned_videos: Dict[str, Path] = {}
+    if aligned_video_name:
+        for cid in cam_ids:
+            cam_dir = capture_root / sanitize_camera_id(str(cid))
+            cand = cam_dir / aligned_video_name
+            if not cand.exists():
+                console.print(f"[pose] missing aligned video {cand}")
+                return False
+            aligned_videos[str(cid)] = cand
 
     row_count = count_csv_rows(frames_csv)
     total_steps = row_count * max(1, len(cam_ids))
@@ -424,6 +542,7 @@ def process_capture(
     err_count = 0
     video_caps: Dict[str, cv2.VideoCapture] = {}
     video_paths: Dict[str, Path] = {}
+    aligned_read_counts: Dict[str, int] = {}
     last_guess: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
 
     with frames_csv.open("r", newline="") as f:
@@ -465,13 +584,18 @@ def process_capture(
                     "delta_ms": delta_ms,
                     "color_path": color_rel,
                 }
-                if not color_rel:
-                    entry.update({"status": "error", "error": "missing_color_path"})
-                    output["poses"].append(entry)
-                    err_count += 1
-                    progress.advance(task_id)
-                    continue
-                color_path = prefer_mp4_path(resolve_color_path(capture_root, cid, color_rel))
+                if aligned_video_name:
+                    color_path = aligned_videos.get(str(cid))
+                    frame_idx = frame_index + 1
+                    entry["color_path"] = aligned_video_name
+                else:
+                    if not color_rel:
+                        entry.update({"status": "error", "error": "missing_color_path"})
+                        output["poses"].append(entry)
+                        err_count += 1
+                        progress.advance(task_id)
+                        continue
+                    color_path = prefer_mp4_path(resolve_color_path(capture_root, cid, color_rel))
                 if not color_path.exists():
                     entry.update(
                         {
@@ -516,7 +640,35 @@ def process_capture(
                             continue
                         video_caps[cid] = cap
                         video_paths[cid] = color_path
-                    image = read_video_frame(cap, frame_idx)
+                    if aligned_video_name:
+                        ok, image = cap.read()
+                        if not ok:
+                            entry.update(
+                                {
+                                    "status": "error",
+                                    "error": "video_read_failed",
+                                    "color_path_resolved": str(color_path),
+                                }
+                            )
+                            output["poses"].append(entry)
+                            err_count += 1
+                            progress.advance(task_id)
+                            continue
+                        aligned_read_counts[cid] = aligned_read_counts.get(cid, 0) + 1
+                        if aligned_read_counts[cid] != frame_index + 1:
+                            entry.update(
+                                {
+                                    "status": "error",
+                                    "error": "aligned_frame_mismatch",
+                                    "color_path_resolved": str(color_path),
+                                }
+                            )
+                            output["poses"].append(entry)
+                            err_count += 1
+                            progress.advance(task_id)
+                            continue
+                    else:
+                        image = read_video_frame(cap, frame_idx)
                 else:
                     if frame_idx is None and color_path.suffix.lower() == ".png":
                         frame_idx = parse_frame_index(color_path.stem)
@@ -583,7 +735,7 @@ def process_capture(
                 ok_count += 1
                 progress.advance(task_id)
 
-    out_path = capture_root / output_name
+    out_path = capture_root / output_json_name
     with out_path.open("w") as f:
         json.dump(output, f, indent=2)
     for cap in video_caps.values():
@@ -624,6 +776,7 @@ def main() -> int:
     parser.add_argument("--pnp-reproj", type=float, default=2, help="PnP RANSAC reprojection error (px)")
     parser.add_argument("--pnp-iterations", type=int, default=1000, help="PnP RANSAC iterations")
     parser.add_argument("--pnp-confidence", type=float, default=0.99, help="PnP RANSAC confidence")
+    parser.add_argument("--workers", type=int, default=1, help="Process sessions in parallel")
     parser.add_argument(
         "--pnp-method",
         default="iterative",
@@ -650,14 +803,6 @@ def main() -> int:
         print("No meta.json found")
         return 1
 
-    threads = args.threads if args.threads > 0 else max(1, cv2.getNumberOfCPUs())
-    detector = Detector(
-        families=family,
-        nthreads=threads,
-        quad_decimate=args.decimate,
-        quad_sigma=args.sigma,
-        refine_edges=True,
-    )
     pnp_flags = {
         "iterative": cv2.SOLVEPNP_ITERATIVE,
         "ippe": cv2.SOLVEPNP_IPPE,
@@ -665,47 +810,101 @@ def main() -> int:
     }
     pnp_flag = pnp_flags[args.pnp_method]
 
-    console = Console()
-    progress = Progress(
-        SpinnerColumn(),
-        TextColumn("{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        TimeElapsedColumn(),
-        console=console,
-    )
     any_written = False
     any_processed = False
-    with progress:
-        for idx, meta in enumerate(metas, start=1):
-            capture_root = meta.parent
-            
-            # Pre-check requirements to avoid "processing" trivial skips which might trigger issues
-            frames_csv = capture_root / "frames_aligned.csv"
-            if not frames_csv.exists():
-                # Silently skip or log debug
-                continue
-
-            wrote = process_capture(
-                capture_root,
-                meta,
-                tag_map_path,
-                detector,
-                tag_length,
-                tag_poses,
-                args.output_name,
-                args.pnp_reproj,
-                args.pnp_iterations,
-                args.pnp_confidence,
-                not args.no_ransac,
-                pnp_flag,
-                progress,
-                console,
-                idx,
-                len(metas),
-            )
-            any_processed = True
-            any_written = any_written or wrote
+    if args.workers > 1:
+        job_args = {
+            "output_name": args.output_name,
+            "threads": args.threads,
+            "decimate": args.decimate,
+            "sigma": args.sigma,
+            "pnp_reproj": args.pnp_reproj,
+            "pnp_iterations": args.pnp_iterations,
+            "pnp_confidence": args.pnp_confidence,
+            "no_ransac": args.no_ransac,
+            "pnp_method": args.pnp_method,
+        }
+        jobs = [
+            {
+                "meta_path": str(meta),
+                "tag_map_path": str(tag_map_path),
+                "args": job_args,
+                "index": idx,
+                "total": len(metas),
+            }
+            for idx, meta in enumerate(metas, start=1)
+        ]
+        console = Console()
+        progress = Progress(
+            SpinnerColumn(),
+            TextColumn("sessions"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            console=console,
+        )
+        ctx = mp.get_context("spawn")
+        pool = ctx.Pool(processes=args.workers)
+        try:
+            with progress:
+                task_id = progress.add_task("sessions", total=len(jobs))
+                results = []
+                for result in pool.imap_unordered(process_capture_worker, jobs):
+                    results.append(result)
+                    progress.advance(task_id)
+                    status = result.get("status", "done")
+                    capture_root = result.get("capture_root", "")
+                    message = result.get("message", "")
+                    console.print(f"[pose] {status}: {capture_root} ({message})")
+            pool.close()
+            pool.join()
+        except Exception:
+            pool.terminate()
+            pool.join()
+            raise
+        any_processed = bool(results)
+        any_written = any(bool(r.get("ok")) for r in results)
+    else:
+        threads = args.threads if args.threads > 0 else max(1, cv2.getNumberOfCPUs())
+        detector = Detector(
+            families=family,
+            nthreads=threads,
+            quad_decimate=args.decimate,
+            quad_sigma=args.sigma,
+            refine_edges=True,
+        )
+        console = Console()
+        progress = Progress(
+            SpinnerColumn(),
+            TextColumn("{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            console=console,
+        )
+        with progress:
+            for idx, meta in enumerate(metas, start=1):
+                capture_root = meta.parent
+                wrote = process_capture(
+                    capture_root,
+                    meta,
+                    tag_map_path,
+                    detector,
+                    tag_length,
+                    tag_poses,
+                    args.output_name,
+                    args.pnp_reproj,
+                    args.pnp_iterations,
+                    args.pnp_confidence,
+                    not args.no_ransac,
+                    pnp_flag,
+                    progress,
+                    console,
+                    idx,
+                    len(metas),
+                )
+                any_processed = True
+                any_written = any_written or wrote
     if any_processed and not any_written:
         return 0
     return 0 if any_written else 1

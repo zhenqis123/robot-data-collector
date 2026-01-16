@@ -18,26 +18,13 @@ import json
 import os
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+import bisect
 from datetime import datetime, timezone
 import numpy as np
 
-TS_FIELDS = [
-    "timestamp_iso",
-    "timestamp_ms",
-    "device_timestamp_ms",
-    "frame_index",
-    "color_path",
-    "rgb_path",
-    "depth_path",
-    "color_timestamp_iso",
-    "color_timestamp_ms",
-    "color_device_timestamp_ms",
-    "color_frame_index",
-    "depth_timestamp_iso",
-    "depth_timestamp_ms",
-    "depth_device_timestamp_ms",
-    "depth_frame_index",
-]
+TS_FIELDS = ["timestamp_iso", "timestamp_ms", "device_timestamp_ms", "frame_index",
+             "color_path", "rgb_path", "depth_path"]
+ALIGN_MAX_DELTA_MS = 30
 
 
 @dataclass
@@ -56,61 +43,62 @@ def read_timestamps(csv_path: Path) -> List[FrameRow]:
         return rows
     with csv_path.open("r", newline="") as f:
         reader = csv.DictReader(f)
-        fieldnames = reader.fieldnames or []
-        has_color_fields = "color_timestamp_ms" in fieldnames or "color_frame_index" in fieldnames
         for r in reader:
             try:
-                def parse_int(value: str) -> Optional[int]:
-                    if value == "":
-                        return None
-                    try:
-                        return int(value)
-                    except ValueError:
-                        return None
-
                 color_path = r.get("color_path", "")
                 rgb_path = r.get("rgb_path", "")
                 depth_path = r.get("depth_path", "")
                 if not color_path and rgb_path:
                     color_path = rgb_path
-
-                if has_color_fields:
-                    ts_ms = parse_int(r.get("color_timestamp_ms", ""))
-                    if ts_ms is None:
-                        continue
-                    ts_iso = r.get("color_timestamp_iso", "")
-                    device_ts = parse_int(r.get("color_device_timestamp_ms", "")) or 0
-                    idx = parse_int(r.get("color_frame_index", ""))
-                else:
-                    ts_ms = parse_int(r.get("timestamp_ms", "")) or 0
-                    ts_iso = r.get("timestamp_iso", "")
-                    device_ts = parse_int(r.get("device_timestamp_ms", "")) or 0
-                    idx = parse_int(r.get("frame_index", ""))
-
+                frame_index = r.get("frame_index", "")
+                idx: Optional[int] = None
+                if frame_index:
+                    try:
+                        idx = int(frame_index)
+                    except ValueError:
+                        idx = None
                 if idx is None and color_path:
                     stem = Path(color_path).stem
                     if stem.isdigit():
                         idx = int(stem)
                 rows.append(
                     FrameRow(
-                        timestamp_iso=ts_iso,
-                        timestamp_ms=int(ts_ms),
-                        device_timestamp_ms=int(device_ts),
+                        timestamp_iso=r.get("timestamp_iso", ""),
+                        timestamp_ms=int(r.get("timestamp_ms", "0")),
+                        device_timestamp_ms=int(r.get("device_timestamp_ms", "0")),
                         frame_index=idx,
                         color_path=color_path,
                         depth_path=depth_path,
                     )
                 )
-            except ValueError:
+            except:
                 continue
     return rows
 
 
-def closest_frame(target_ts: int, frames: List[FrameRow]) -> Tuple[Optional[FrameRow], Optional[int]]:
+def build_timestamp_index(frames: List[FrameRow]) -> Tuple[List[int], List[FrameRow]]:
     if not frames:
+        return [], []
+    frames_sorted = sorted(frames, key=lambda fr: fr.timestamp_ms)
+    ts_list = [fr.timestamp_ms for fr in frames_sorted]
+    return ts_list, frames_sorted
+
+
+def closest_frame(
+    target_ts: int,
+    ts_list: List[int],
+    frames_sorted: List[FrameRow],
+) -> Tuple[Optional[FrameRow], Optional[int]]:
+    if not ts_list:
         return None, None
-    best = min(frames, key=lambda fr: abs(fr.timestamp_ms - target_ts))
-    return best, abs(best.timestamp_ms - target_ts)
+    idx = bisect.bisect_left(ts_list, target_ts)
+    candidates = []
+    if idx < len(ts_list):
+        candidates.append(idx)
+    if idx > 0:
+        candidates.append(idx - 1)
+    best_idx = min(candidates, key=lambda i: abs(ts_list[i] - target_ts))
+    return frames_sorted[best_idx], abs(ts_list[best_idx] - target_ts)
 
 
 def find_meta_files(root: Path, max_depth: int) -> List[Path]:
@@ -164,6 +152,9 @@ def align_capture(capture_root: Path, reference: Optional[str]) -> None:
         cid_path = Path(sanitize_camera_id(str(cid)))
         ts_path = capture_root / cid_path / "timestamps.csv"
         cam_frames[cid] = read_timestamps(ts_path)
+    cam_indexes: Dict[str, Tuple[List[int], List[FrameRow]]] = {
+        cid: build_timestamp_index(frames) for cid, frames in cam_frames.items()
+    }
 
     ref_frames = cam_frames.get(ref_id, [])
     if not ref_frames:
@@ -191,7 +182,9 @@ def align_capture(capture_root: Path, reference: Optional[str]) -> None:
         writer.writerow(header)
         # Collect stats per camera
         stats: Dict[str, List[int]] = {cid: [] for cid in cam_ids if cid != ref_id}
+        kept_rows = 0
         for fr in ref_frames:
+            row_ok = True
             row = [
                 ref_id,
                 fr.timestamp_iso,
@@ -204,8 +197,9 @@ def align_capture(capture_root: Path, reference: Optional[str]) -> None:
             for cid in cam_ids:
                 if cid == ref_id:
                     continue
-                match, delta = closest_frame(fr.timestamp_ms, cam_frames.get(cid, []))
-                if match:
+                ts_list, frames_sorted = cam_indexes.get(cid, ([], []))
+                match, delta = closest_frame(fr.timestamp_ms, ts_list, frames_sorted)
+                if match and delta is not None and delta <= ALIGN_MAX_DELTA_MS:
                     row.extend(
                         [
                             match.frame_index if match.frame_index is not None else "",
@@ -217,12 +211,15 @@ def align_capture(capture_root: Path, reference: Optional[str]) -> None:
                     if delta is not None:
                         stats[cid].append(delta)
                 else:
-                    row.extend(["", "", "", ""])
-            writer.writerow(row)
+                    row_ok = False
+                    break
+            if row_ok:
+                writer.writerow(row)
+                kept_rows += 1
     # Print stats
     lines = [f"[timestamps] aligned frames written to {out_path}"]
     lines.append(f"  reference: {ref_id}")
-    lines.append(f"  frames aligned (rows): {len(ref_frames)}")
+    lines.append(f"  frames aligned (rows): {kept_rows}")
     for cid, deltas in stats.items():
         if deltas:
             arr = np.array(deltas, dtype=np.float32)
@@ -236,7 +233,7 @@ def align_capture(capture_root: Path, reference: Optional[str]) -> None:
         {
             "reference_camera": ref_id,
             "output": out_path.name,
-            "rows": len(ref_frames),
+            "rows": kept_rows,
         },
     )
 
