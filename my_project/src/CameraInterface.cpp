@@ -125,6 +125,15 @@ public:
     {
         _config = config;
         _alignEnabled = config.alignDepth;
+        _filtersEnabled = config.enableFilters;
+        if (_filtersEnabled)
+        {
+            _spatialFilter.set_option(RS2_OPTION_FILTER_MAGNITUDE, 3);
+            _spatialFilter.set_option(RS2_OPTION_FILTER_SMOOTH_ALPHA, 1);
+            _spatialFilter.set_option(RS2_OPTION_FILTER_SMOOTH_DELTA, 50);
+            _spatialFilter.set_option(RS2_OPTION_HOLES_FILL, 3);
+            _holeFillingFilter.set_option(RS2_OPTION_HOLES_FILL, 0);
+        }
         const int colorWidth = ensurePositive(config.color.width, ensurePositive(config.width, 640));
         const int colorHeight = ensurePositive(config.color.height, ensurePositive(config.height, 480));
         const int colorFps = ensurePositive(config.color.frameRate, ensurePositive(config.frameRate, 30));
@@ -276,6 +285,16 @@ public:
         try
         {
             rs2::frameset frames = _pipeline.wait_for_frames(15000);
+
+            // Apply filters BEFORE alignment to avoid artifacts/stripes.
+            // Filtering on raw depth data is more accurate.
+            if (_filtersEnabled)
+            {
+                // Filters can process framesets directly (updating the depth frame inside)
+                frames = _spatialFilter.process(frames);
+                frames = _holeFillingFilter.process(frames);
+            }
+
             rs2::frameset processed = _alignEnabled ? _align.process(frames) : frames;
             rs2::video_frame color = processed.get_color_frame();
             rs2::depth_frame depth = processed.get_depth_frame();
@@ -426,6 +445,9 @@ private:
     rs2::pipeline _pipeline;
     rs2::config _rsConfig;
     rs2::align _align;
+    rs2::spatial_filter _spatialFilter;
+    rs2::hole_filling_filter _holeFillingFilter;
+    bool _filtersEnabled{false};
     rs2::device _device;
     double _depthScale{0.0};
     bool _running{false};

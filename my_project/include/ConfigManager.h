@@ -48,6 +48,7 @@ struct CameraConfig
     int height = 0;
     int frameRate = 0;
     bool alignDepth{true};
+    bool enableFilters{false};
     
     // Generic settings for non-camera devices
     std::unordered_map<std::string, std::string> extraSettings;

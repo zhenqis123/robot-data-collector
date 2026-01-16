@@ -61,6 +61,7 @@ bool ConfigManager::load(const std::string &path)
         config.serial = obj.value("serial").toString().toStdString();
         config.endpoint = obj.value("endpoint").toString().toStdString();
         config.alignDepth = obj.value("align_depth").toBool(true);
+        config.enableFilters = obj.value("enable_filters").toBool(false);
         const auto resolution = obj.value("resolution").toString().toStdString();
         const auto [width, height] = parseResolution(resolution);
         const int fps = obj.value("frame_rate").toInt();

@@ -2,7 +2,7 @@
   "tasks_path": "tasks",
   "captures_path": "logs/captures",
   "display_fps_limit": 5,
-  "show_depth_preview": false,
+  "show_depth_preview": true,
   "vlm": {
     "model": "qwen3-vl-plus",
     "endpoint": "https://api.probex.top/v1/chat/completions",
@@ -49,6 +49,7 @@
       "type": "RealSense",
       "id": 0,
       "align_depth": false,
+      "enable_filters": false,
       "color": {
         "resolution": "1280x720",
         "frame_rate": 30
@@ -63,6 +64,7 @@
       "type": "RealSense",
       "id": 1,
       "align_depth": false,
+      "enable_filters": true,
       "color": {
         "resolution": "1280x720",
         "frame_rate": 30
@@ -77,6 +79,7 @@
       "type": "RealSense",
       "id": 2,
       "align_depth": false,
+      "enable_filters": true,
       "color": {
         "resolution": "1280x720",
         "frame_rate": 30
