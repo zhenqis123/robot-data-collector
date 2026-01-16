@@ -1,8 +1,8 @@
 {
   "tasks_path": "tasks",
   "captures_path": "logs/captures",
-  "display_fps_limit": 5,
-  "show_depth_preview": false,
+  "display_fps_limit": 30,
+  "show_depth_preview": true,
   "vlm": {
     "model": "qwen3-vl-plus",
     "endpoint": "https://api.probex.top/v1/chat/completions",
@@ -103,10 +103,5 @@
     "right_port": "/dev/serial/by-path/pci-0000:0e:00.0-usb-0:3:1.0"
   },
   "aruco_targets": [
-    {
-      "type": "apriltag",
-      "family": "tagStandard41h12",
-      "marker_ids": [0, 1, 2, 3,4,5,6]
-    }
   ]
 }
