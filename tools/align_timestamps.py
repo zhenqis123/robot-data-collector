@@ -21,8 +21,23 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timezone
 import numpy as np
 
-TS_FIELDS = ["timestamp_iso", "timestamp_ms", "device_timestamp_ms", "frame_index",
-             "color_path", "rgb_path", "depth_path"]
+TS_FIELDS = [
+    "timestamp_iso",
+    "timestamp_ms",
+    "device_timestamp_ms",
+    "frame_index",
+    "color_path",
+    "rgb_path",
+    "depth_path",
+    "color_timestamp_iso",
+    "color_timestamp_ms",
+    "color_device_timestamp_ms",
+    "color_frame_index",
+    "depth_timestamp_iso",
+    "depth_timestamp_ms",
+    "depth_device_timestamp_ms",
+    "depth_frame_index",
+]
 
 
 @dataclass
@@ -41,29 +56,46 @@ def read_timestamps(csv_path: Path) -> List[FrameRow]:
         return rows
     with csv_path.open("r", newline="") as f:
         reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames or []
+        has_color_fields = "color_timestamp_ms" in fieldnames or "color_frame_index" in fieldnames
         for r in reader:
             try:
+                def parse_int(value: str) -> Optional[int]:
+                    if value == "":
+                        return None
+                    try:
+                        return int(value)
+                    except ValueError:
+                        return None
+
                 color_path = r.get("color_path", "")
                 rgb_path = r.get("rgb_path", "")
                 depth_path = r.get("depth_path", "")
                 if not color_path and rgb_path:
                     color_path = rgb_path
-                frame_index = r.get("frame_index", "")
-                idx: Optional[int] = None
-                if frame_index:
-                    try:
-                        idx = int(frame_index)
-                    except ValueError:
-                        idx = None
+
+                if has_color_fields:
+                    ts_ms = parse_int(r.get("color_timestamp_ms", ""))
+                    if ts_ms is None:
+                        continue
+                    ts_iso = r.get("color_timestamp_iso", "")
+                    device_ts = parse_int(r.get("color_device_timestamp_ms", "")) or 0
+                    idx = parse_int(r.get("color_frame_index", ""))
+                else:
+                    ts_ms = parse_int(r.get("timestamp_ms", "")) or 0
+                    ts_iso = r.get("timestamp_iso", "")
+                    device_ts = parse_int(r.get("device_timestamp_ms", "")) or 0
+                    idx = parse_int(r.get("frame_index", ""))
+
                 if idx is None and color_path:
                     stem = Path(color_path).stem
                     if stem.isdigit():
                         idx = int(stem)
                 rows.append(
                     FrameRow(
-                        timestamp_iso=r.get("timestamp_iso", ""),
-                        timestamp_ms=int(r.get("timestamp_ms", "0")),
-                        device_timestamp_ms=int(r.get("device_timestamp_ms", "0")),
+                        timestamp_iso=ts_iso,
+                        timestamp_ms=int(ts_ms),
+                        device_timestamp_ms=int(device_ts),
                         frame_index=idx,
                         color_path=color_path,
                         depth_path=depth_path,

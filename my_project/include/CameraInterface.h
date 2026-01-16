@@ -29,6 +29,8 @@ struct FrameData
     std::shared_ptr<void> depthOwner;
     std::chrono::system_clock::time_point timestamp;
     int64_t deviceTimestampMs{0};
+    int64_t colorFrameNumber{-1};
+    int64_t depthFrameNumber{-1};
     std::string cameraId;
     std::string colorFormat;
 
@@ -78,7 +80,7 @@ struct FrameWriter
 {
     virtual ~FrameWriter() = default;
     virtual bool write(const FrameData &frame) = 0;
-    virtual void setWriteCallback(std::function<void()> callback) { (void)callback; }
+    virtual void setWriteCallback(std::function<void(const FrameData &)> callback) { (void)callback; }
 };
 
 std::unique_ptr<FrameWriter> makePngWriter(const std::string &deviceId,

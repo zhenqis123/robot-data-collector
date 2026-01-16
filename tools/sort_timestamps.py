@@ -51,9 +51,24 @@ def sort_timestamps_csv(path: Path, dry_run: bool) -> bool:
         print(f"[sort] skip {path}, no rows")
         return False
 
+    def parse_index(value: str) -> Optional[int]:
+        if not value:
+            return None
+        try:
+            return int(value)
+        except ValueError:
+            return None
+
     def sort_key(item):
         idx, row = item
-        frame_idx = parse_frame_index(row.get("color_path", "")) or parse_frame_index(row.get("depth_path", ""))
+        frame_idx = (
+            parse_index(row.get("color_frame_index", ""))
+            or parse_index(row.get("depth_frame_index", ""))
+            or parse_index(row.get("frame_index", ""))
+        )
+        if frame_idx is None:
+            color_path = row.get("color_path", "") or row.get("rgb_path", "")
+            frame_idx = parse_frame_index(color_path) or parse_frame_index(row.get("depth_path", ""))
         return (frame_idx is None, frame_idx or 0, idx)
 
     indexed_rows = list(enumerate(rows))

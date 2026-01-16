@@ -116,7 +116,11 @@ void Preview::registerCameraView(const std::string &cameraId, const std::string 
         view.showDepth = showDepth;
     }
 
-    auto infoLabel = new QLabel("Capture: 0.0 fps | Display: 0.0 fps | Write: 0.0 fps");
+    const bool showDepthFps = view.showDepth && !view.isTextOnly;
+    const QString baseText = showDepthFps
+                                 ? "Cap R/D: 0.0/0.0 | Disp R/D: 0.0/0.0 | Write R/D: 0.0/0.0"
+                                 : "Capture: 0.0 fps | Display: 0.0 fps | Write: 0.0 fps";
+    auto infoLabel = new QLabel(baseText);
     infoLabel->setStyleSheet(
         "color: #f0f0f0; background-color: rgba(0,0,0,0.5); font-size: 12px; padding: 2px 6px;"
     );
@@ -323,12 +327,27 @@ void Preview::updateCameraStats(const std::string &cameraId, const CameraFps &fp
     if (it == _views.end() || !it->second.infoLabel)
         return;
     auto &view = it->second;
-    view.infoBaseText =
-        (QString("Capture: %1 fps | Display: %2 fps | Write: %3 fps")
-             .arg(fps.capture, 0, 'f', 1)
-             .arg(fps.display, 0, 'f', 1)
-             .arg(fps.write, 0, 'f', 1))
-            .toStdString();
+    if (!view.isTextOnly && view.showDepth)
+    {
+        view.infoBaseText =
+            (QString("Cap R/D: %1/%2 | Disp R/D: %3/%4 | Write R/D: %5/%6")
+                 .arg(fps.captureColor, 0, 'f', 1)
+                 .arg(fps.captureDepth, 0, 'f', 1)
+                 .arg(fps.displayColor, 0, 'f', 1)
+                 .arg(fps.displayDepth, 0, 'f', 1)
+                 .arg(fps.writeColor, 0, 'f', 1)
+                 .arg(fps.writeDepth, 0, 'f', 1))
+                .toStdString();
+    }
+    else
+    {
+        view.infoBaseText =
+            (QString("Capture: %1 fps | Display: %2 fps | Write: %3 fps")
+                 .arg(fps.captureColor, 0, 'f', 1)
+                 .arg(fps.displayColor, 0, 'f', 1)
+                 .arg(fps.writeColor, 0, 'f', 1))
+                .toStdString();
+    }
     renderInfo(view);
 }
 

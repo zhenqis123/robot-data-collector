@@ -474,6 +474,8 @@ private:
         data.depthOwner = depthHolder;
         data.timestamp = std::chrono::system_clock::now();
         data.deviceTimestampMs = static_cast<int64_t>(color.get_timestamp());
+        data.colorFrameNumber = static_cast<int64_t>(color.get_frame_number());
+        data.depthFrameNumber = static_cast<int64_t>(depth.get_frame_number());
         data.cameraId = _identifier;
         data.colorFormat = "YUYV";
         return true;
@@ -705,7 +707,7 @@ public:
         closeStreams();
     }
 
-    void setWriteCallback(std::function<void()> callback) override
+    void setWriteCallback(std::function<void(const FrameData &)> callback) override
     {
         std::lock_guard<std::mutex> lock(_callbackMutex);
         _writeCallback = std::move(callback);
@@ -723,6 +725,8 @@ public:
         copy.depthOwner = frame.depthOwner;
         copy.timestamp = frame.timestamp;
         copy.deviceTimestampMs = frame.deviceTimestampMs;
+        copy.colorFrameNumber = frame.colorFrameNumber;
+        copy.depthFrameNumber = frame.depthFrameNumber;
         copy.cameraId = frame.cameraId;
         copy.colorFormat = frame.colorFormat;
 
@@ -758,11 +762,15 @@ private:
                 _queue.pop();
             }
 
-            const uint64_t idx = ++_frameIndex;
+            ++_frameIndex;
             const auto t0 = std::chrono::steady_clock::now();
             const bool rgbOk = writeRgb(frame);
             const auto t1 = std::chrono::steady_clock::now();
-            const bool depthOk = writeDepth(frame);
+            uint64_t colorFrameIndex = 0;
+            if (rgbOk)
+                colorFrameIndex = ++_colorIndex;
+            uint64_t depthFrameIndex = 0;
+            const bool depthOk = writeDepth(frame, &depthFrameIndex);
             const auto t2 = std::chrono::steady_clock::now();
 
             _perfRgbMs += std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -788,11 +796,12 @@ private:
                 continue;
             }
 
-            const auto iso = toIso(frame.timestamp);
-            const auto tsMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                  frame.timestamp.time_since_epoch())
-                                  .count();
+            if (rgbOk || depthOk)
             {
+                const auto iso = toIso(frame.timestamp);
+                const auto tsMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                      frame.timestamp.time_since_epoch())
+                                      .count();
                 std::lock_guard<std::mutex> lock(_tsMutex);
                 if (!_tsStream.is_open())
                 {
@@ -800,22 +809,44 @@ private:
                     const bool existed = std::filesystem::exists(filePath);
                     _tsStream.open(filePath.string(), std::ios::out | std::ios::app);
                     if (!existed)
-                        _tsStream << "frame_index,timestamp_iso,timestamp_ms,device_timestamp_ms,rgb_path,depth_path\n";
+                    {
+                        _tsStream << "color_frame_index,color_timestamp_iso,color_timestamp_ms,"
+                                     "color_device_timestamp_ms,color_path,"
+                                     "depth_frame_index,depth_timestamp_iso,depth_timestamp_ms,"
+                                     "depth_device_timestamp_ms,depth_path\n";
+                    }
                 }
-                _tsStream << idx << "," << iso << "," << tsMs << "," << frame.deviceTimestampMs << ","
-                          << "rgb.mkv"
-                          << "," << (frame.hasDepth() ? "depth.h5" : "") << "\n";
+                if (rgbOk)
+                {
+                    _tsStream << colorFrameIndex << "," << iso << "," << tsMs << ","
+                              << frame.deviceTimestampMs << "," << "rgb.mkv";
+                }
+                else
+                {
+                    _tsStream << ",,,,";
+                }
+                _tsStream << ",";
+                if (depthOk)
+                {
+                    _tsStream << depthFrameIndex << "," << iso << "," << tsMs << ","
+                              << frame.deviceTimestampMs << "," << "depth.h5";
+                }
+                else
+                {
+                    _tsStream << ",,,,";
+                }
+                _tsStream << "\n";
                 ++_timestampLineCount;
                 if (_timestampLineCount % _timestampFlushEvery == 0)
                     _tsStream.flush();
             }
-            std::function<void()> callback;
+            std::function<void(const FrameData &)> callback;
             {
                 std::lock_guard<std::mutex> lock(_callbackMutex);
                 callback = _writeCallback;
             }
             if (callback)
-                callback();
+                callback(frame);
         }
     }
 
@@ -895,9 +926,11 @@ private:
         return true;
     }
 
-    bool writeDepth(const FrameData &frame)
+    bool writeDepth(const FrameData &frame, uint64_t *outIndex)
     {
         if (!frame.hasDepth())
+            return false;
+        if (!outIndex)
             return false;
         if (!_hdf5Ready && !initHdf5(frame.depthRef().cols, frame.depthRef().rows))
             return false;
@@ -913,22 +946,35 @@ private:
             depthMat.convertTo(depthMat, CV_16U);
         }
 
-        if (_depthChunkSizeUsed <= 1)
-            return writeDepthBatch(depthMat.data, 1);
+        const auto tsMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                              frame.timestamp.time_since_epoch())
+                              .count();
+        const int64_t deviceTsMs = frame.deviceTimestampMs;
 
-        if (!appendDepthToBuffer(depthMat))
+        if (_depthChunkSizeUsed <= 1)
+        {
+            const int64_t tsData[2] = {tsMs, deviceTsMs};
+            if (!writeDepthBatch(depthMat.data, tsData, 1))
+                return false;
+            *outIndex = _depthIndex;
+            return true;
+        }
+
+        if (!appendDepthToBuffer(depthMat, tsMs, deviceTsMs))
             return false;
+        *outIndex = _depthIndex + static_cast<uint64_t>(_depthBuffered);
         if (_depthBuffered < static_cast<size_t>(_depthChunkSizeUsed))
             return true;
 
-        const bool ok = writeDepthBatch(_depthChunkBuffer.data(), _depthBuffered);
+        const size_t countFrames = _depthBuffered;
+        const bool ok = writeDepthBatch(_depthChunkBuffer.data(), _depthTsChunkBuffer.data(), countFrames);
         _depthBuffered = 0;
         return ok;
     }
 
-    bool appendDepthToBuffer(const cv::Mat &depthMat)
+    bool appendDepthToBuffer(const cv::Mat &depthMat, int64_t tsMs, int64_t deviceTsMs)
     {
-        if (_depthFramePixels == 0 || _depthChunkBuffer.empty())
+        if (_depthFramePixels == 0 || _depthChunkBuffer.empty() || _depthTsChunkBuffer.empty())
             return false;
         const size_t frameBytes = _depthFramePixels * sizeof(uint16_t);
         uint16_t *dest = _depthChunkBuffer.data() + (_depthBuffered * _depthFramePixels);
@@ -945,6 +991,9 @@ private:
                 std::memcpy(reinterpret_cast<uint8_t *>(dest) + static_cast<size_t>(row) * rowBytes, src, rowBytes);
             }
         }
+        const size_t tsIndex = _depthBuffered * 2;
+        _depthTsChunkBuffer[tsIndex] = tsMs;
+        _depthTsChunkBuffer[tsIndex + 1] = deviceTsMs;
         ++_depthBuffered;
         return true;
     }
@@ -961,11 +1010,17 @@ private:
                                        static_cast<hsize_t>(_depthWidth)};
         if (H5Dset_extent(_h5Dataset, extendDims) < 0)
             return false;
+        if (_h5TimestampDataset >= 0)
+        {
+            const hsize_t tsExtend[2] = {static_cast<hsize_t>(target), 2};
+            if (H5Dset_extent(_h5TimestampDataset, tsExtend) < 0)
+                return false;
+        }
         _depthAllocSize = target;
         return true;
     }
 
-    bool writeDepthBatch(const void *data, size_t countFrames)
+    bool writeDepthBatch(const void *data, const int64_t *tsData, size_t countFrames)
     {
         if (countFrames == 0)
             return true;
@@ -990,6 +1045,29 @@ private:
         if (status < 0)
             return false;
 
+        if (_h5TimestampDataset >= 0 && tsData)
+        {
+            hid_t tsSpace = H5Dget_space(_h5TimestampDataset);
+            if (tsSpace < 0)
+                return false;
+            const hsize_t tsStart[2] = {static_cast<hsize_t>(_depthIndex), 0};
+            const hsize_t tsCount[2] = {static_cast<hsize_t>(countFrames), 2};
+            H5Sselect_hyperslab(tsSpace, H5S_SELECT_SET, tsStart, nullptr, tsCount, nullptr);
+            hid_t tsMem = H5Screate_simple(2, tsCount, nullptr);
+            const herr_t tsStatus = H5Dwrite(_h5TimestampDataset,
+                                             H5T_NATIVE_INT64,
+                                             tsMem,
+                                             tsSpace,
+                                             H5P_DEFAULT,
+                                             tsData);
+            H5Sclose(tsMem);
+            H5Sclose(tsSpace);
+            if (tsStatus < 0)
+            {
+                _logger.error("Failed to write depth timestamps for %s", _deviceId.c_str());
+            }
+        }
+
         _depthIndex += static_cast<uint64_t>(countFrames);
         if (_depthChunkSizeUsed > 0 && (_depthIndex % static_cast<uint64_t>(_depthChunkSizeUsed) == 0))
             H5Fflush(_h5File, H5F_SCOPE_LOCAL);
@@ -1000,7 +1078,7 @@ private:
     {
         if (!_hdf5Ready || _depthBuffered == 0)
             return;
-        if (writeDepthBatch(_depthChunkBuffer.data(), _depthBuffered))
+        if (writeDepthBatch(_depthChunkBuffer.data(), _depthTsChunkBuffer.data(), _depthBuffered))
             _depthBuffered = 0;
     }
 
@@ -1175,9 +1253,33 @@ private:
             closeHdf5();
             return false;
         }
+
+        hsize_t tsDims[2] = {0, 2};
+        hsize_t tsMaxDims[2] = {H5S_UNLIMITED, 2};
+        hid_t tsSpace = H5Screate_simple(2, tsDims, tsMaxDims);
+        if (tsSpace < 0)
+        {
+            closeHdf5();
+            return false;
+        }
+        hid_t tsProps = H5Pcreate(H5P_DATASET_CREATE);
+        hsize_t tsChunkDims[2] = {static_cast<hsize_t>(_depthChunkSizeUsed), 2};
+        H5Pset_chunk(tsProps, 2, tsChunkDims);
+        _h5TimestampDataset =
+            H5Dcreate2(_h5File, "/depth_timestamps", H5T_NATIVE_INT64, tsSpace, H5P_DEFAULT, tsProps, H5P_DEFAULT);
+        H5Pclose(tsProps);
+        H5Sclose(tsSpace);
+        if (_h5TimestampDataset < 0)
+        {
+            closeHdf5();
+            return false;
+        }
         _depthAllocSize = 0;
         if (_depthChunkSizeUsed > 1 && _depthFramePixels > 0)
+        {
             _depthChunkBuffer.resize(_depthChunkSizeUsed * _depthFramePixels);
+            _depthTsChunkBuffer.resize(static_cast<size_t>(_depthChunkSizeUsed) * 2);
+        }
         _hdf5Ready = true;
         return true;
     }
@@ -1233,6 +1335,16 @@ private:
             H5Dclose(_h5Dataset);
             _h5Dataset = H5I_INVALID_HID;
         }
+        if (_h5TimestampDataset >= 0)
+        {
+            if (_depthIndex > 0)
+            {
+                const hsize_t tsFinal[2] = {static_cast<hsize_t>(_depthIndex), 2};
+                H5Dset_extent(_h5TimestampDataset, tsFinal);
+            }
+            H5Dclose(_h5TimestampDataset);
+            _h5TimestampDataset = H5I_INVALID_HID;
+        }
         if (_h5File >= 0)
         {
             H5Fclose(_h5File);
@@ -1272,6 +1384,7 @@ private:
     Logger &_logger;
     std::ofstream _tsStream;
     uint64_t _frameIndex{0};
+    uint64_t _colorIndex{0};
     std::mutex _tsMutex;
     std::mutex _mutex;
     std::mutex _callbackMutex;
@@ -1294,6 +1407,7 @@ private:
     size_t _depthFramePixels{0};
     size_t _depthBuffered{0};
     std::vector<uint16_t> _depthChunkBuffer;
+    std::vector<int64_t> _depthTsChunkBuffer;
     std::chrono::system_clock::time_point _firstTimestamp;
     std::string _encoderName;
     std::string _inputGstFormat;
@@ -1303,6 +1417,7 @@ private:
     GstElement *_filesink{nullptr};
     hid_t _h5File{H5I_INVALID_HID};
     hid_t _h5Dataset{H5I_INVALID_HID};
+    hid_t _h5TimestampDataset{H5I_INVALID_HID};
     int _depthWidth{0};
     int _depthHeight{0};
     uint64_t _depthIndex{0};
@@ -1314,7 +1429,7 @@ private:
     double _perfRgbMs{0.0};
     double _perfDepthMs{0.0};
     double _perfTotalMs{0.0};
-    std::function<void()> _writeCallback;
+    std::function<void(const FrameData &)> _writeCallback;
     uint64_t _timestampLineCount{0};
     static constexpr uint64_t _timestampFlushEvery = 30;
 };

@@ -124,30 +124,50 @@ def read_camera_timestamps(csv_path: Path) -> Tuple[List[float], List[int]]:
         return timestamps, indices
     with csv_path.open("r", newline="") as f:
         reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames or []
+        has_color_fields = "color_timestamp_ms" in fieldnames or "color_frame_index" in fieldnames
         counter = 0
         for row in reader:
-            ts_val = row.get("timestamp_ms", "")
-            if ts_val == "":
-                continue
-            try:
-                ts = float(ts_val)
-            except ValueError:
-                continue
-            frame_index = row.get("frame_index", "")
-            idx = None
-            if frame_index:
+            if has_color_fields:
+                ts_val = row.get("color_timestamp_ms", "")
+                if ts_val == "":
+                    continue
                 try:
-                    idx = int(frame_index)
+                    ts = float(ts_val)
                 except ValueError:
-                    idx = None
-            if idx is None:
-                color_path = row.get("color_path", "") or row.get("rgb_path", "")
-                stem = Path(color_path).stem
-                if stem.isdigit():
-                    idx = int(stem)
-            if idx is None:
-                counter += 1
-                idx = counter
+                    continue
+                idx = None
+                frame_index = row.get("color_frame_index", "")
+                if frame_index:
+                    try:
+                        idx = int(frame_index)
+                    except ValueError:
+                        idx = None
+                if idx is None:
+                    continue
+            else:
+                ts_val = row.get("timestamp_ms", "")
+                if ts_val == "":
+                    continue
+                try:
+                    ts = float(ts_val)
+                except ValueError:
+                    continue
+                frame_index = row.get("frame_index", "")
+                idx = None
+                if frame_index:
+                    try:
+                        idx = int(frame_index)
+                    except ValueError:
+                        idx = None
+                if idx is None:
+                    color_path = row.get("color_path", "") or row.get("rgb_path", "")
+                    stem = Path(color_path).stem
+                    if stem.isdigit():
+                        idx = int(stem)
+                if idx is None:
+                    counter += 1
+                    idx = counter
             timestamps.append(ts)
             indices.append(idx)
     return timestamps, indices
@@ -402,7 +422,10 @@ def load_ref_timestamps(root: Path) -> Tuple[List[float], str]:
                     reader = csv.DictReader(f)
                     ts_list = []
                     for row in reader:
-                        value = row.get("timestamp_ms", "")
+                        if "color_timestamp_ms" in (reader.fieldnames or []):
+                            value = row.get("color_timestamp_ms", "")
+                        else:
+                            value = row.get("timestamp_ms", "")
                         if value == "":
                             continue
                         try:
