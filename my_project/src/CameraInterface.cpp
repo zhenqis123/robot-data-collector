@@ -126,6 +126,7 @@ public:
     {
         _config = config;
         _alignDepthEnabled = config.alignDepth;
+        _debugCapture = config.debugCapture;
         const StreamSettings settings = resolveStreamSettings(config);
 
         try
@@ -166,8 +167,31 @@ public:
                 handleCaptureTimeout();
                 return data;
             }
-            rs2::frameset processed = _alignDepthEnabled ? _align.process(frames) : frames;
+            double alignMs = 0.0;
+            rs2::frameset processed = frames;
+            if (_alignDepthEnabled)
+            {
+                const auto t0 = std::chrono::steady_clock::now();
+                processed = _align.process(frames);
+                const auto t1 = std::chrono::steady_clock::now();
+                alignMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+            }
             fillFrameData(processed, data);
+            if (_debugCapture && ++_debugCounter % _debugLogEvery == 0)
+            {
+                const auto color = processed.get_color_frame();
+                const auto depth = processed.get_depth_frame();
+                if (color && depth)
+                {
+                    _logger.info("RealSense debug %s: color#=%llu depth#=%llu depth_ts=%.2f align_ms=%.2f queue=%zu",
+                                 _identifier.c_str(),
+                                 static_cast<unsigned long long>(color.get_frame_number()),
+                                 static_cast<unsigned long long>(depth.get_frame_number()),
+                                 depth.get_timestamp(),
+                                 alignMs,
+                                 frameQueueSize());
+                }
+            }
         }
         catch (const rs2::error &e)
         {
@@ -475,6 +499,12 @@ private:
         _frameQueue.clear();
     }
 
+    size_t frameQueueSize()
+    {
+        std::lock_guard<std::mutex> lock(_frameMutex);
+        return _frameQueue.size();
+    }
+
     void handleCaptureTimeout()
     {
         _logger.error("RealSense capture timeout: no frames for %d ms", kFrameTimeoutMs);
@@ -530,11 +560,14 @@ private:
     bool _frameDropWarned{false};
     double _depthScale{0.0};
     bool _running{false};
+    bool _debugCapture{false};
+    uint64_t _debugCounter{0};
     std::string _cameraName{"RealSense"};
     std::string _serial;
     std::string _identifier;
     CaptureMetadata _metadata;
     static constexpr size_t _maxFrameQueue = 120;
+    static constexpr uint64_t _debugLogEvery = 60;
 };
 
 class WebcamCamera : public CameraInterface

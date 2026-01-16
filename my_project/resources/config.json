@@ -3,6 +3,7 @@
   "captures_path": "logs/captures",
   "display_fps_limit": 30,
   "show_depth_preview": true,
+  "debug_capture": true,
   "vlm": {
     "model": "qwen3-vl-plus",
     "endpoint": "https://api.probex.top/v1/chat/completions",

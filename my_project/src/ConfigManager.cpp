@@ -51,6 +51,7 @@ bool ConfigManager::load(const std::string &path)
     _displayFpsLimit = 0.0;
     _showDepthPreview = true;
 
+    const bool globalDebugCapture = doc.object().value("debug_capture").toBool(false);
     const auto cameras = doc.object().value("cameras").toArray();
     for (const auto &entry : cameras)
     {
@@ -61,6 +62,7 @@ bool ConfigManager::load(const std::string &path)
         config.serial = obj.value("serial").toString().toStdString();
         config.endpoint = obj.value("endpoint").toString().toStdString();
         config.alignDepth = obj.value("align_depth").toBool(true);
+        config.debugCapture = obj.value("debug_capture").toBool(globalDebugCapture);
         const auto resolution = obj.value("resolution").toString().toStdString();
         const auto [width, height] = parseResolution(resolution);
         const int fps = obj.value("frame_rate").toInt();
@@ -103,9 +105,10 @@ bool ConfigManager::load(const std::string &path)
         // Load extra settings for generic devices
         for (auto it = obj.begin(); it != obj.end(); ++it)
         {
-            if (it.key() != "type" && it.key() != "id" && it.key() != "serial" && 
-                it.key() != "endpoint" && it.key() != "resolution" && 
-                it.key() != "frame_rate" && it.key() != "color" && it.key() != "depth")
+            if (it.key() != "type" && it.key() != "id" && it.key() != "serial" &&
+                it.key() != "endpoint" && it.key() != "resolution" &&
+                it.key() != "frame_rate" && it.key() != "color" && it.key() != "depth" &&
+                it.key() != "align_depth" && it.key() != "debug_capture")
             {
                 config.extraSettings[it.key().toStdString()] = it.value().toVariant().toString().toStdString();
             }
