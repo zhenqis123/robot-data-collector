@@ -89,7 +89,7 @@ def derive_cameras(root: Path) -> List[str]:
             try:
                 first_row = next(reader)
                 ref_id = first_row.get("ref_camera", "")
-                if ref_id:
+                if ref_id and is_realsense_id(ref_id):
                     cams.add(ref_id)
             except StopIteration:
                 pass
@@ -98,7 +98,8 @@ def derive_cameras(root: Path) -> List[str]:
                     cid = field.replace("_color", "")
                     if cid == "ref" and "ref_camera" in (reader.fieldnames or []):
                         continue
-                    cams.add(cid)
+                    if is_realsense_id(cid):
+                        cams.add(cid)
             if cams:
                 return list(cams)
     return []
@@ -156,6 +157,9 @@ def read_camera_timestamps(csv_path: Path) -> Tuple[List[float], List[int]]:
 def sanitize_camera_id(cam_id: str) -> str:
     return "".join(ch if (ch.isalnum() or ch in "-_") else "_" for ch in cam_id)
 
+def is_realsense_id(cam_id: str) -> bool:
+    return cam_id.startswith("RealSense")
+
 
 def build_inputs(root: Path) -> Dict[str, Dict[str, Optional[Path]]]:
     """
@@ -187,6 +191,8 @@ def build_inputs(root: Path) -> Dict[str, Dict[str, Optional[Path]]]:
                     for key, val in row.items():
                         if key.endswith("_color") and key not in ("ref_color",):
                             cam_id = key.replace("_color", "")
+                            if not is_realsense_id(cam_id):
+                                continue
                             if cam_id not in result:
                                 result[cam_id] = {"video": None, "frames": []}
                             if val:
@@ -201,7 +207,7 @@ def build_inputs(root: Path) -> Dict[str, Dict[str, Optional[Path]]]:
     meta_path = root / "meta.json"
     if meta_path.exists():
         meta = json.loads(meta_path.read_text())
-        cams = [c["id"] for c in meta.get("cameras", [])]
+        cams = [c["id"] for c in meta.get("cameras", []) if is_realsense_id(str(c.get("id", "")))]
         for cid in cams:
             cam_dir = root / sanitize_camera_id(str(cid))
             color_dir = cam_dir / "color"
@@ -223,6 +229,8 @@ def build_aligned_inputs(
         result[c] = {"video": None, "frames": []}
     for row in rows:
         if ref_cam:
+            if not is_realsense_id(ref_cam):
+                continue
             ref_color = row.get("ref_color", "")
             if ref_color:
                 ref_path = root / sanitize_camera_id(ref_cam) / ref_color
@@ -234,6 +242,8 @@ def build_aligned_inputs(
         for key, val in row.items():
             if key.endswith("_color") and key not in ("ref_color",):
                 cam_id = key.replace("_color", "")
+                if not is_realsense_id(cam_id):
+                    continue
                 if val:
                     path = root / sanitize_camera_id(cam_id) / val
                     payload = result.setdefault(cam_id, {"video": None, "frames": []})
@@ -442,7 +452,11 @@ def load_ref_timestamps(root: Path) -> Tuple[List[float], str]:
     meta_path = root / "meta.json"
     if meta_path.exists():
         meta = json.loads(meta_path.read_text())
-        cams = [str(c["id"]) for c in meta.get("cameras", []) if "id" in c]
+        cams = [
+            str(c["id"])
+            for c in meta.get("cameras", [])
+            if "id" in c and is_realsense_id(str(c["id"]))
+        ]
         if cams:
             cam_id = cams[0]
             cam_dir = root / sanitize_camera_id(cam_id)

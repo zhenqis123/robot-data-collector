@@ -10,13 +10,16 @@ import json
 import os
 import shutil
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 MIN_FRAMES = 300
 
 
 def sanitize_camera_id(cam_id: str) -> str:
     return "".join(ch if (ch.isalnum() or ch in "-_") else "_" for ch in cam_id)
+
+def is_realsense_id(cam_id: str) -> bool:
+    return cam_id.startswith("RealSense")
 
 
 def find_meta_files(root: Path, max_depth: int) -> List[Path]:
@@ -56,21 +59,25 @@ def count_frames(ts_path: Path) -> int:
         return 0
 
 
-def session_frame_count(capture_root: Path) -> int:
-    meta_path = capture_root / "meta.json"
-    if not meta_path.exists():
-        return 0
-    try:
-        meta = json.loads(meta_path.read_text())
-    except json.JSONDecodeError:
-        return 0
-    cam_ids = [str(c.get("id")) for c in meta.get("cameras", []) if c.get("id") is not None]
+def is_capture_meta(meta: Dict) -> bool:
+    cameras = meta.get("cameras")
+    return isinstance(cameras, list) and bool(cameras)
+
+
+def session_frame_count(capture_root: Path, meta: Dict) -> Optional[int]:
+    cam_ids = [
+        str(c.get("id"))
+        for c in meta.get("cameras", [])
+        if c.get("id") is not None and is_realsense_id(str(c.get("id")))
+    ]
     if not cam_ids:
-        return 0
+        return None
     counts = []
     for cam_id in cam_ids:
         cam_dir = capture_root / sanitize_camera_id(cam_id)
-        counts.append(count_frames(cam_dir / "timestamps.csv"))
+        ts_path = cam_dir / "timestamps.csv"
+        if ts_path.exists():
+            counts.append(count_frames(ts_path))
     return max(counts) if counts else 0
 
 
@@ -94,7 +101,15 @@ def main() -> int:
         if not capture_root.is_relative_to(root):
             print(f"[filter] skip {capture_root} (outside root)")
             continue
-        frames = session_frame_count(capture_root)
+        try:
+            meta_obj = json.loads(meta.read_text())
+        except json.JSONDecodeError:
+            continue
+        if not is_capture_meta(meta_obj):
+            continue
+        frames = session_frame_count(capture_root, meta_obj)
+        if frames is None:
+            continue
         if frames < MIN_FRAMES:
             print(f"[filter] deleting {capture_root} (frames={frames} < {MIN_FRAMES})")
             shutil.rmtree(capture_root)

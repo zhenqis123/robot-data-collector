@@ -210,6 +210,9 @@ def sanitize_camera_id(value: str) -> str:
             out.append("_")
     return "".join(out)
 
+def is_realsense_id(value: str) -> bool:
+    return value.startswith("RealSense")
+
 
 def read_tag_map(tag_map_path: Path) -> Tuple[str, float, Dict[int, np.ndarray]]:
     with tag_map_path.open("r") as f:
@@ -509,7 +512,8 @@ def process_capture(
 
     with meta_path.open("r") as f:
         meta = json.load(f)
-    cam_ids = [c.get("id") for c in meta.get("cameras", []) if c.get("id") is not None]
+    cam_ids_raw = [c.get("id") for c in meta.get("cameras", []) if c.get("id") is not None]
+    cam_ids = [cid for cid in cam_ids_raw if is_realsense_id(str(cid))]
     if not cam_ids:
         console.print(f"[pose] no cameras in {capture_root}")
         return False

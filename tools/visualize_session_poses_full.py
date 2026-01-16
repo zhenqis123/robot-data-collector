@@ -137,6 +137,9 @@ def load_intrinsics(meta_path: Path) -> Dict[str, Tuple[np.ndarray, np.ndarray]]
 def sanitize_camera_id(value: str) -> str:
     return "".join(ch if (ch.isalnum() or ch in "-_") else "_" for ch in value)
 
+def is_realsense_id(value: str) -> bool:
+    return value.startswith("RealSense")
+
 
 def parse_frame_index(value: str) -> Optional[int]:
     if not value:
@@ -469,7 +472,11 @@ def render_session(
         print(f"[viz] skip {session}, no rows in {frames_csv}")
         return False
     meta = json.loads(meta_path.read_text())
-    cam_ids = [str(c.get("id")) for c in meta.get("cameras", []) if c.get("id") is not None]
+    cam_ids = [
+        str(c.get("id"))
+        for c in meta.get("cameras", [])
+        if c.get("id") is not None and is_realsense_id(str(c.get("id")))
+    ]
     cam_ids = [cid for cid in cam_ids if cid in intrinsics]
     if csv_cam_ids:
         cam_ids = [cid for cid in cam_ids if cid in csv_cam_ids or cid == rows[0].get("ref_camera")]

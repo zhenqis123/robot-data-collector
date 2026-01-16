@@ -158,6 +158,9 @@ def sanitize_camera_id(cam_id: str) -> str:
     """Match writer sanitize behavior (non-alnum -> underscore)."""
     return "".join(ch if (ch.isalnum() or ch in "-_") else "_" for ch in cam_id)
 
+def is_realsense_id(cam_id: str) -> bool:
+    return cam_id.startswith("RealSense")
+
 
 def _process_png(path: Path, color_dir: Path, out_dir: Path, meta: Dict, delete_original_depth: bool) -> None:
     stem = path.stem
@@ -183,8 +186,12 @@ def _process_depth_array(index: int, depth_raw: np.ndarray, out_dir: Path, meta:
 
 def process_capture(meta_path: Path, workers: int, delete_original_depth: bool) -> None:
     meta = load_meta(meta_path)
-    cam_entries = {c["id"]: c for c in meta.get("cameras", [])}
+    cam_entries = {
+        c["id"]: c for c in meta.get("cameras", []) if is_realsense_id(str(c.get("id", "")))
+    }
     base = meta_path.parent
+    if not cam_entries:
+        return
     if should_skip_step(base, "align_depth"):
         print(f"[align] skip {base}, already aligned depth")
         return

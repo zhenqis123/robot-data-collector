@@ -136,6 +136,9 @@ def list_frame_names(frames_dir: Path) -> List[str]:
 def sanitize_camera_id(cam_id: str) -> str:
     return "".join(ch if (ch.isalnum() or ch in "-_") else "_" for ch in cam_id)
 
+def is_realsense_id(cam_id: str) -> bool:
+    return cam_id.startswith("RealSense")
+
 
 def find_meta_files(root: Path, max_depth: int) -> List[Path]:
     result: List[Path] = []
@@ -234,7 +237,11 @@ def build_jobs_from_meta(root: Path, find_meta: bool) -> List[Dict[str, str]]:
         except json.JSONDecodeError:
             print(f"[error] invalid meta.json: {meta_path}")
             continue
-        cam_ids = [str(c.get("id")) for c in meta.get("cameras", []) if c.get("id") is not None]
+        cam_ids = [
+            str(c.get("id"))
+            for c in meta.get("cameras", [])
+            if c.get("id") is not None and is_realsense_id(str(c.get("id")))
+        ]
         if not cam_ids:
             print(f"[warning] no cameras in {meta_path}")
             continue
