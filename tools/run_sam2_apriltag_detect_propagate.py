@@ -821,265 +821,263 @@ def run_single_video(
     capture_root: Optional[Path] = None,
     cam_id: str = "",
 ) -> int:
-    if not third_party_root.exists():
-        print(f"[error] missing Grounded-SAM-2 at {third_party_root}")
-        return 1
-    if not diffueraser_root.exists():
-        print(f"[error] missing DiffuEraser at {diffueraser_root}")
-        return 1
+    try:
+        if not third_party_root.exists():
+            print(f"[error] missing Grounded-SAM-2 at {third_party_root}")
+            return 1
+        if not diffueraser_root.exists():
+            print(f"[error] missing DiffuEraser at {diffueraser_root}")
+            return 1
 
-    if not video_path.exists():
-        print(f"[error] video not found: {video_path}")
-        return 1
+        if not video_path.exists():
+            print(f"[error] video not found: {video_path}")
+            return 1
 
-    if not args.skip_extract:
-        extract_frames(video_path, frames_dir, 1, args.max_frames)
+        if not args.skip_extract:
+            extract_frames(video_path, frames_dir, 1, args.max_frames)
 
-    frame_names = list_frame_names(frames_dir)
+        frame_names = list_frame_names(frames_dir)
 
-    os.chdir(third_party_root)
-    sys.path.insert(0, str(third_party_root))
+        os.chdir(third_party_root)
+        sys.path.insert(0, str(third_party_root))
 
-    torch_dtype = torch.float16 if device.startswith("cuda") else torch.float32
-    if device == "cuda":
-        enable_cuda_fastpath()
+        torch_dtype = torch.float16 if device.startswith("cuda") else torch.float32
+        if device == "cuda":
+            enable_cuda_fastpath()
 
-    video_segments: Dict[int, Dict[int, np.ndarray]] = {}
-    tag_ids: set[int] = set()
-    prev_chunk_last_masks: Dict[int, np.ndarray] | None = None
-    total_frames = len(frame_names)
-    num_chunks = math.ceil(total_frames / args.chunk_size)
+        video_segments: Dict[int, Dict[int, np.ndarray]] = {}
+        tag_ids: set[int] = set()
+        prev_chunk_last_masks: Dict[int, np.ndarray] | None = None
+        total_frames = len(frame_names)
+        num_chunks = math.ceil(total_frames / args.chunk_size)
 
-    video_predictor = build_sam2_video_predictor(
-        "configs/sam2.1/sam2.1_hiera_l.yaml",
-        "checkpoints/sam2.1_hiera_large.pt",
-        device=device,
-        dtype=torch_dtype,
-    )
-
-    autocast_ctx: contextlib.AbstractContextManager
-    if device.startswith("cuda"):
-        if hasattr(torch, "autocast"):
-            autocast_ctx = torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-        else:
-            autocast_ctx = torch.cuda.amp.autocast(dtype=torch.bfloat16)
-    else:
-        autocast_ctx = contextlib.nullcontext()
-
-    for chunk_idx in range(num_chunks):
-        start_idx = chunk_idx * args.chunk_size
-        end_idx = min((chunk_idx + 1) * args.chunk_size, total_frames)
-        chunk_frame_names = frame_names[start_idx:end_idx]
-        print(f"[info] processing chunk {chunk_idx + 1}/{num_chunks} ({len(chunk_frame_names)} frames)")
-
-        with tempfile.TemporaryDirectory() as temp_chunk_dir:
-            temp_chunk_dir = Path(temp_chunk_dir)
-            copy_chunk_frames(frames_dir, chunk_frame_names, temp_chunk_dir)
-
-            chunk_names = list_frame_names(temp_chunk_dir)
-            detections_by_frame, chunk_tag_ids = collect_apriltag_detections(
-                temp_chunk_dir, chunk_names, APRILTAG_FAMILY
-            )
-            tag_ids.update(chunk_tag_ids)
-            conditioning_frames = select_conditioning_frames(
-                detections_by_frame, stride=args.prompt_stride
-            )
-
-            first_frame_path = temp_chunk_dir / "00000.jpg"
-            first_frame = cv2.imread(str(first_frame_path))
-            if first_frame is None:
-                print(f"[warning] failed to read chunk frame: {first_frame_path}")
-                continue
-            frame_h, frame_w = first_frame.shape[:2]
-            inference_state = None
-            try:
-                inference_state = video_predictor.init_state(
-                    video_path=str(temp_chunk_dir),
-                    offload_video_to_cpu=args.offload_video_to_cpu,
-                    offload_state_to_cpu=args.offload_state_to_cpu,
-                    async_loading_frames=args.async_loading_frames,
-                )
-                with autocast_ctx:
-                    has_prev_masks = bool(prev_chunk_last_masks)
-                    if prev_chunk_last_masks:
-                        for obj_id, mask in prev_chunk_last_masks.items():
-                            if mask is None or getattr(mask, "size", 0) == 0:
-                                continue
-                            mask_arr = normalize_mask_to_frame(mask, frame_h, frame_w)
-                            video_predictor.add_new_mask(
-                                inference_state=inference_state,
-                                frame_idx=0,
-                                obj_id=int(obj_id),
-                                mask=mask_arr,
-                            )
-
-                    for frame_idx, detections in conditioning_frames.items():
-                        for tag_id, box in detections:
-                            expanded_box = expand_box(box, frame_w, frame_h)
-                            points = sample_uniform_points_in_box(box, num_points=1)
-                            labels = np.ones((points.shape[0],), dtype=np.int32)
-                            video_predictor.add_new_points_or_box(
-                                inference_state=inference_state,
-                                frame_idx=frame_idx,
-                                obj_id=int(tag_id),
-                                points=points,
-                                box=np.array(expanded_box, dtype=np.float32),
-                                labels=labels,
-                            )
-
-                    if not conditioning_frames and not prev_chunk_last_masks:
-                        print("[warning] no AprilTags detected in this chunk and no carry-over masks")
-                        continue
-
-                    chunk_segments: Dict[int, Dict[int, np.ndarray]] = {}
-                    for out_frame_idx, out_obj_ids, out_mask_logits in video_predictor.propagate_in_video(
-                        inference_state
-                    ):
-                        if device.startswith("cuda"):
-                            out_mask_logits = out_mask_logits.to(dtype=torch.float16).cpu()
-                        chunk_segments[out_frame_idx] = masks_from_logits(out_mask_logits, out_obj_ids)
-
-                    print("[info] running reverse propagation for chunk")
-                    for out_frame_idx, out_obj_ids, out_mask_logits in video_predictor.propagate_in_video(
-                        inference_state,
-                        reverse=True,
-                    ):
-                        if device.startswith("cuda"):
-                            out_mask_logits = out_mask_logits.to(dtype=torch.float16).cpu()
-                        rev_masks = masks_from_logits(out_mask_logits, out_obj_ids)
-                        if out_frame_idx in chunk_segments:
-                            chunk_segments[out_frame_idx] = merge_masks(
-                                chunk_segments[out_frame_idx], rev_masks
-                            )
-                        else:
-                            chunk_segments[out_frame_idx] = rev_masks
-
-            finally:
-                if inference_state is not None:
-                    video_predictor.reset_state(inference_state)
-                    del inference_state
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                gc.collect()
-
-            for out_frame_idx, segments in chunk_segments.items():
-                global_idx = start_idx + out_frame_idx
-                video_segments[global_idx] = segments
-
-            if chunk_segments:
-                last_idx = max(chunk_segments.keys())
-                last_masks = chunk_segments.get(last_idx, {})
-                prev_chunk_last_masks = {
-                    int(obj_id): mask.copy()
-                    for obj_id, mask in last_masks.items()
-                    if mask is not None and hasattr(mask, "size") and mask.size > 0
-                }
-            else:
-                prev_chunk_last_masks = None
-
-    del video_predictor
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    gc.collect()
-
-    if results_dir.exists():
-        shutil.rmtree(results_dir)
-    results_dir.mkdir(parents=True, exist_ok=True)
-    tag_labels = {int(tag_id): f"apriltag_{int(tag_id)}" for tag_id in sorted(tag_ids)}
-    for frame_idx, frame_name in enumerate(tqdm(frame_names, desc="Annotating frames")):
-        frame_path = frames_dir / frame_name
-        image = cv2.imread(str(frame_path))
-        if image is None:
-            continue
-        segments = video_segments.get(frame_idx, {})
-        if segments:
-            object_ids = []
-            mask_list = []
-            for obj_id, mask in segments.items():
-                mask_arr = normalize_mask_2d(mask, image.shape[0], image.shape[1])
-                if mask_arr.size == 0 or mask_arr.ndim != 2:
-                    continue
-                mask_arr = mask_arr.astype(bool)
-                if not mask_arr.any():
-                    continue
-                object_ids.append(obj_id)
-                mask_list.append(mask_arr)
-            if not mask_list:
-                annotated = image
-                cv2.imwrite(str(results_dir / f"annotated_{frame_idx:05d}.jpg"), annotated)
-                continue
-            filtered_ids: List[int] = []
-            filtered_masks: List[np.ndarray] = []
-            for obj_id, mask_arr in zip(object_ids, mask_list):
-                mask_norm = normalize_mask_2d(mask_arr, image.shape[0], image.shape[1])
-                if mask_norm.size == 0 or mask_norm.ndim != 2:
-                    continue
-                if not mask_norm.any():
-                    continue
-                filtered_ids.append(obj_id)
-                filtered_masks.append(mask_norm.astype(bool))
-            if not filtered_masks:
-                annotated = image
-                cv2.imwrite(str(results_dir / f"annotated_{frame_idx:05d}.jpg"), annotated)
-                continue
-            masks = np.stack(filtered_masks, axis=0)
-            if masks.ndim == 4 and masks.shape[1] == 1:
-                masks = masks[:, 0, :, :]
-            xyxy = sv.mask_to_xyxy(masks).astype(np.float32)
-            detections = sv.Detections(
-                xyxy=xyxy,
-                mask=masks,
-                class_id=np.array(filtered_ids, dtype=np.int32),
-            )
-            box_annotator = sv.BoxAnnotator()
-            label_annotator = sv.LabelAnnotator()
-            mask_annotator = sv.MaskAnnotator()
-            annotated = box_annotator.annotate(scene=image.copy(), detections=detections)
-            annotated = label_annotator.annotate(
-                annotated,
-                detections=detections,
-                labels=[tag_labels.get(i, f"obj_{i}") for i in filtered_ids],
-            )
-            annotated = mask_annotator.annotate(scene=annotated, detections=detections)
-        else:
-            annotated = image
-
-        cv2.imwrite(str(results_dir / f"annotated_{frame_idx:05d}.jpg"), annotated)
-
-    video_info = sv.VideoInfo.from_video_path(str(video_path))
-    write_video_from_frames_dir(results_dir, output_video, video_info.fps)
-    write_mask_video(frames_dir, video_segments, output_mask_video, video_info.fps)
-
-    print("[info] running DiffuEraser inpainting")
-    run_diffueraser(
-        input_video=video_path,
-        input_mask=output_mask_video,
-        output_dir=inpaint_dir,
-        chunk_size=args.diffueraser_chunk_size,
-        output_path=inpaint_output
-    )
-
-    if frames_dir.exists():
-        shutil.rmtree(frames_dir)
-    if results_dir.exists():
-        shutil.rmtree(results_dir)
-    if inpaint_dir.exists():
-        shutil.rmtree(inpaint_dir)
-    if capture_root is not None:
-        update_marker(
-            capture_root,
-            "sam2_apriltag_tracking",
-            {
-                "camera_id": cam_id,
-                "input_video": str(video_path),
-                "output_video": str(output_video),
-                "output_mask_video": str(output_mask_video),
-                "inpaint_output": str(inpaint_output),
-            },
+        video_predictor = build_sam2_video_predictor(
+            "configs/sam2.1/sam2.1_hiera_l.yaml",
+            "checkpoints/sam2.1_hiera_large.pt",
+            device=device,
+            dtype=torch_dtype,
         )
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    return 0
+
+        autocast_ctx: contextlib.AbstractContextManager
+        if device.startswith("cuda"):
+            if hasattr(torch, "autocast"):
+                autocast_ctx = torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+            else:
+                autocast_ctx = torch.cuda.amp.autocast(dtype=torch.bfloat16)
+        else:
+            autocast_ctx = contextlib.nullcontext()
+
+        for chunk_idx in range(num_chunks):
+            start_idx = chunk_idx * args.chunk_size
+            end_idx = min((chunk_idx + 1) * args.chunk_size, total_frames)
+            chunk_frame_names = frame_names[start_idx:end_idx]
+            print(f"[info] processing chunk {chunk_idx + 1}/{num_chunks} ({len(chunk_frame_names)} frames)")
+
+            with tempfile.TemporaryDirectory() as temp_chunk_dir:
+                temp_chunk_dir = Path(temp_chunk_dir)
+                copy_chunk_frames(frames_dir, chunk_frame_names, temp_chunk_dir)
+
+                chunk_names = list_frame_names(temp_chunk_dir)
+                detections_by_frame, chunk_tag_ids = collect_apriltag_detections(
+                    temp_chunk_dir, chunk_names, APRILTAG_FAMILY
+                )
+                tag_ids.update(chunk_tag_ids)
+                conditioning_frames = select_conditioning_frames(
+                    detections_by_frame, stride=args.prompt_stride
+                )
+
+                first_frame_path = temp_chunk_dir / "00000.jpg"
+                first_frame = cv2.imread(str(first_frame_path))
+                if first_frame is None:
+                    print(f"[warning] failed to read chunk frame: {first_frame_path}")
+                    continue
+                frame_h, frame_w = first_frame.shape[:2]
+                inference_state = None
+                try:
+                    inference_state = video_predictor.init_state(
+                        video_path=str(temp_chunk_dir),
+                        offload_video_to_cpu=args.offload_video_to_cpu,
+                        offload_state_to_cpu=args.offload_state_to_cpu,
+                        async_loading_frames=args.async_loading_frames,
+                    )
+                    with autocast_ctx:
+                        if prev_chunk_last_masks:
+                            for obj_id, mask in prev_chunk_last_masks.items():
+                                if mask is None or getattr(mask, "size", 0) == 0:
+                                    continue
+                                mask_arr = normalize_mask_to_frame(mask, frame_h, frame_w)
+                                video_predictor.add_new_mask(
+                                    inference_state=inference_state,
+                                    frame_idx=0,
+                                    obj_id=int(obj_id),
+                                    mask=mask_arr,
+                                )
+
+                        for frame_idx, detections in conditioning_frames.items():
+                            for tag_id, box in detections:
+                                expanded_box = expand_box(box, frame_w, frame_h)
+                                points = sample_uniform_points_in_box(box, num_points=1)
+                                labels = np.ones((points.shape[0],), dtype=np.int32)
+                                video_predictor.add_new_points_or_box(
+                                    inference_state=inference_state,
+                                    frame_idx=frame_idx,
+                                    obj_id=int(tag_id),
+                                    points=points,
+                                    box=np.array(expanded_box, dtype=np.float32),
+                                    labels=labels,
+                                )
+
+                        if not conditioning_frames and not prev_chunk_last_masks:
+                            print("[warning] no AprilTags detected in this chunk and no carry-over masks")
+                            continue
+
+                        chunk_segments: Dict[int, Dict[int, np.ndarray]] = {}
+                        for out_frame_idx, out_obj_ids, out_mask_logits in video_predictor.propagate_in_video(
+                            inference_state
+                        ):
+                            if device.startswith("cuda"):
+                                out_mask_logits = out_mask_logits.to(dtype=torch.float16).cpu()
+                            chunk_segments[out_frame_idx] = masks_from_logits(out_mask_logits, out_obj_ids)
+
+                        print("[info] running reverse propagation for chunk")
+                        for out_frame_idx, out_obj_ids, out_mask_logits in video_predictor.propagate_in_video(
+                            inference_state,
+                            reverse=True,
+                        ):
+                            if device.startswith("cuda"):
+                                out_mask_logits = out_mask_logits.to(dtype=torch.float16).cpu()
+                            rev_masks = masks_from_logits(out_mask_logits, out_obj_ids)
+                            if out_frame_idx in chunk_segments:
+                                chunk_segments[out_frame_idx] = merge_masks(
+                                    chunk_segments[out_frame_idx], rev_masks
+                                )
+                            else:
+                                chunk_segments[out_frame_idx] = rev_masks
+
+                finally:
+                    if inference_state is not None:
+                        video_predictor.reset_state(inference_state)
+                        del inference_state
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    gc.collect()
+
+                for out_frame_idx, segments in chunk_segments.items():
+                    global_idx = start_idx + out_frame_idx
+                    video_segments[global_idx] = segments
+
+                if chunk_segments:
+                    last_idx = max(chunk_segments.keys())
+                    last_masks = chunk_segments.get(last_idx, {})
+                    prev_chunk_last_masks = {
+                        int(obj_id): mask.copy()
+                        for obj_id, mask in last_masks.items()
+                        if mask is not None and hasattr(mask, "size") and mask.size > 0
+                    }
+                else:
+                    prev_chunk_last_masks = None
+
+        del video_predictor
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+
+        if results_dir.exists():
+            shutil.rmtree(results_dir)
+        results_dir.mkdir(parents=True, exist_ok=True)
+        tag_labels = {int(tag_id): f"apriltag_{int(tag_id)}" for tag_id in sorted(tag_ids)}
+        for frame_idx, frame_name in enumerate(tqdm(frame_names, desc="Annotating frames")):
+            frame_path = frames_dir / frame_name
+            image = cv2.imread(str(frame_path))
+            if image is None:
+                continue
+            segments = video_segments.get(frame_idx, {})
+            if segments:
+                object_ids = []
+                mask_list = []
+                for obj_id, mask in segments.items():
+                    mask_arr = normalize_mask_2d(mask, image.shape[0], image.shape[1])
+                    if mask_arr.size == 0 or mask_arr.ndim != 2:
+                        continue
+                    mask_arr = mask_arr.astype(bool)
+                    if not mask_arr.any():
+                        continue
+                    object_ids.append(obj_id)
+                    mask_list.append(mask_arr)
+                if not mask_list:
+                    annotated = image
+                    cv2.imwrite(str(results_dir / f"annotated_{frame_idx:05d}.jpg"), annotated)
+                    continue
+                filtered_ids: List[int] = []
+                filtered_masks: List[np.ndarray] = []
+                for obj_id, mask_arr in zip(object_ids, mask_list):
+                    mask_norm = normalize_mask_2d(mask_arr, image.shape[0], image.shape[1])
+                    if mask_norm.size == 0 or mask_norm.ndim != 2:
+                        continue
+                    if not mask_norm.any():
+                        continue
+                    filtered_ids.append(obj_id)
+                    filtered_masks.append(mask_norm.astype(bool))
+                if not filtered_masks:
+                    annotated = image
+                    cv2.imwrite(str(results_dir / f"annotated_{frame_idx:05d}.jpg"), annotated)
+                    continue
+                masks = np.stack(filtered_masks, axis=0)
+                if masks.ndim == 4 and masks.shape[1] == 1:
+                    masks = masks[:, 0, :, :]
+                xyxy = sv.mask_to_xyxy(masks).astype(np.float32)
+                detections = sv.Detections(
+                    xyxy=xyxy,
+                    mask=masks,
+                    class_id=np.array(filtered_ids, dtype=np.int32),
+                )
+                box_annotator = sv.BoxAnnotator()
+                label_annotator = sv.LabelAnnotator()
+                mask_annotator = sv.MaskAnnotator()
+                annotated = box_annotator.annotate(scene=image.copy(), detections=detections)
+                annotated = label_annotator.annotate(
+                    annotated,
+                    detections=detections,
+                    labels=[tag_labels.get(i, f"obj_{i}") for i in filtered_ids],
+                )
+                annotated = mask_annotator.annotate(scene=annotated, detections=detections)
+            else:
+                annotated = image
+
+            cv2.imwrite(str(results_dir / f"annotated_{frame_idx:05d}.jpg"), annotated)
+
+        video_info = sv.VideoInfo.from_video_path(str(video_path))
+        write_video_from_frames_dir(results_dir, output_video, video_info.fps)
+        write_mask_video(frames_dir, video_segments, output_mask_video, video_info.fps)
+
+        print("[info] running DiffuEraser inpainting")
+        run_diffueraser(
+            input_video=video_path,
+            input_mask=output_mask_video,
+            output_dir=inpaint_dir,
+            chunk_size=args.diffueraser_chunk_size,
+            output_path=inpaint_output
+        )
+
+        if capture_root is not None:
+            update_marker(
+                capture_root,
+                "sam2_apriltag_tracking",
+                {
+                    "camera_id": cam_id,
+                    "input_video": str(video_path),
+                    "output_video": str(output_video),
+                    "output_mask_video": str(output_mask_video),
+                    "inpaint_output": str(inpaint_output),
+                },
+            )
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        return 0
+    finally:
+        for path in (frames_dir, results_dir, inpaint_dir):
+            if path.exists():
+                shutil.rmtree(path)
 
 
 def _device_worker(device_id: str, jobs: List[Dict[str, str]], args_dict: Dict) -> int:

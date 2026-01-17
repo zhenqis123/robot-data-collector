@@ -19,6 +19,7 @@ import gc
 import json
 import os
 import multiprocessing as mp
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -917,8 +918,12 @@ def main() -> int:
         detector = None
         gc.collect()
     if any_processed and not any_written:
-        return 0
-    return 0 if any_written else 1
+        exit_code = 0
+    else:
+        exit_code = 0 if any_written else 1
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(exit_code)
 
 
 def should_skip_step(capture_root: Path, step: str) -> bool:
