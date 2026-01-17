@@ -1157,6 +1157,33 @@ private:
                          "bitrate", _colorBitrateKbps,
                          nullptr);
         }
+        else if (_encoderName == "vaapih264enc")
+        {
+            const guint rateControl = 7;     // icq
+            const guint qualityFactor = 18;  // lower means higher quality
+            const guint qualityLevel = 1;    // lower means higher quality
+            const guint refs = 3;
+            const guint maxBFrames = 2;
+
+            g_object_set(G_OBJECT(encoder),
+                         "rate-control", rateControl,
+                         "quality-factor", qualityFactor,
+                         "quality-level", qualityLevel,
+                         "cabac", TRUE,
+                         "dct8x8", TRUE,
+                         "trellis", TRUE,
+                         "refs", refs,
+                         "max-bframes", maxBFrames,
+                         "bitrate", 0,
+                         nullptr);
+            _logger.info("VAAPI H264 quality settings for %s: rate-control=icq(%u), quality-factor=%u, quality-level=%u, refs=%u, max-bframes=%u, cabac=1, dct8x8=1, trellis=1, bitrate=0",
+                         _deviceId.c_str(),
+                         rateControl,
+                         qualityFactor,
+                         qualityLevel,
+                         refs,
+                         maxBFrames);
+        }
         else
         {
             g_object_set(G_OBJECT(encoder), "bitrate", _colorBitrateKbps, nullptr);
