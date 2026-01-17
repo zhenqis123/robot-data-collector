@@ -644,7 +644,8 @@ public:
                                  logger,
                                  ensurePositive(_config.color.frameRate, ensurePositive(_config.frameRate, 30)),
                                  _config.depth.chunkSize,
-                                 _config.color.bitrateKbps);
+                                 _config.color.bitrateKbps,
+                                 _config.color.rateControl);
     }
 
     CaptureMetadata captureMetadata() const override
