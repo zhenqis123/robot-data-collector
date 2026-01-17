@@ -1121,13 +1121,20 @@ private:
         _filesink = gst_element_factory_make("filesink", "sink");
 
         GstElement *capsfilter = nullptr;
+        GstElement *postproc = nullptr;
+        GstElement *postcaps = nullptr;
         if (_useHwEncoder)
         {
             capsfilter = gst_element_factory_make("capsfilter", "capsfilter");
+            if (gst_element_factory_find("vaapipostproc"))
+            {
+                postproc = gst_element_factory_make("vaapipostproc", "postproc");
+                postcaps = gst_element_factory_make("capsfilter", "postcaps");
+            }
         }
 
         if (!_appsrc || !convert || !encoder || !parse || !mux || !_filesink ||
-            (_useHwEncoder && !capsfilter))
+            (_useHwEncoder && (!capsfilter || (postproc && !postcaps))))
         {
             if (!_appsrc)
                 _logger.error("Missing GStreamer element appsrc for %s", _deviceId.c_str());
@@ -1144,6 +1151,8 @@ private:
                 _logger.error("Missing GStreamer element filesink for %s", _deviceId.c_str());
             if (_useHwEncoder && !capsfilter)
                 _logger.error("Missing GStreamer element capsfilter for %s", _deviceId.c_str());
+            if (_useHwEncoder && postproc && !postcaps)
+                _logger.error("Missing GStreamer element postcaps for %s", _deviceId.c_str());
             closeGst();
             return false;
         }
@@ -1209,12 +1218,29 @@ private:
             g_object_set(G_OBJECT(capsfilter), "caps", hwCaps, nullptr);
             gst_caps_unref(hwCaps);
 
-            gst_bin_add_many(GST_BIN(_pipeline), _appsrc, convert, capsfilter, encoder, parse, mux, _filesink, nullptr);
-            if (!gst_element_link_many(_appsrc, convert, capsfilter, encoder, parse, mux, _filesink, nullptr))
+            if (postproc && postcaps)
             {
-                _logger.error("Failed to link GStreamer pipeline for %s", _deviceId.c_str());
-                closeGst();
-                return false;
+                GstCaps *vaCaps = gst_caps_from_string("video/x-raw(memory:VASurface),format=NV12,interlace-mode=progressive");
+                g_object_set(G_OBJECT(postcaps), "caps", vaCaps, nullptr);
+                gst_caps_unref(vaCaps);
+                gst_bin_add_many(GST_BIN(_pipeline), _appsrc, convert, capsfilter, postproc, postcaps, encoder, parse, mux, _filesink, nullptr);
+                if (!gst_element_link_many(_appsrc, convert, capsfilter, postproc, postcaps, encoder, parse, mux, _filesink, nullptr))
+                {
+                    _logger.error("Failed to link GStreamer pipeline for %s", _deviceId.c_str());
+                    closeGst();
+                    return false;
+                }
+                _logger.info("Enabled vaapipostproc for %s", _deviceId.c_str());
+            }
+            else
+            {
+                gst_bin_add_many(GST_BIN(_pipeline), _appsrc, convert, capsfilter, encoder, parse, mux, _filesink, nullptr);
+                if (!gst_element_link_many(_appsrc, convert, capsfilter, encoder, parse, mux, _filesink, nullptr))
+                {
+                    _logger.error("Failed to link GStreamer pipeline for %s", _deviceId.c_str());
+                    closeGst();
+                    return false;
+                }
             }
         }
         else
