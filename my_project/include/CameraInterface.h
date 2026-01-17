@@ -91,7 +91,8 @@ std::unique_ptr<FrameWriter> makeGstHdf5Writer(const std::string &deviceId,
                                                Logger &logger,
                                                int colorFps,
                                                int depthChunkSize,
-                                               int colorBitrateKbps);
+                                               int colorBitrateKbps,
+                                               const std::string &colorRateControl);
 
 class CameraInterface
 {

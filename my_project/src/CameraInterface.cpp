@@ -678,13 +678,15 @@ public:
                        Logger &logger,
                        int colorFps,
                        int depthChunkSize,
-                       int colorBitrateKbps)
+                       int colorBitrateKbps,
+                       const std::string &colorRateControl)
         : _deviceId(deviceId),
           _basePath(basePath),
           _logger(logger),
           _colorFps(colorFps > 0 ? colorFps : 30),
           _depthChunkSize(depthChunkSize > 0 ? depthChunkSize : 0),
-          _colorBitrateKbps(colorBitrateKbps > 0 ? colorBitrateKbps : 8000)
+          _colorBitrateKbps(colorBitrateKbps > 0 ? colorBitrateKbps : 8000),
+          _colorRateControl(colorRateControl.empty() ? "cbr" : colorRateControl)
     {
         const auto sanitized = sanitize(_deviceId);
         _cameraDir = std::filesystem::path(_basePath) / sanitized;
@@ -1168,28 +1170,60 @@ private:
         }
         else if (_encoderName == "vaapih264enc")
         {
-            const guint rateControl = 2;  // cbr
+            const bool useCqp = (_colorRateControl == "cqp");
+            const guint rateControl = useCqp ? 1 : 2;
             const guint qualityLevel = 1;
             const guint refs = 3;
             const guint maxBFrames = 2;
 
-            g_object_set(G_OBJECT(encoder),
-                         "rate-control", rateControl,
-                         "bitrate", _colorBitrateKbps,
-                         "quality-level", qualityLevel,
-                         "cabac", TRUE,
-                         "dct8x8", TRUE,
-                         "trellis", TRUE,
-                         "refs", refs,
-                         "max-bframes", maxBFrames,
-                         nullptr);
-            _logger.info("VAAPI H264 quality settings for %s: rate-control=cbr(%u), bitrate=%d kbps, quality-level=%u, refs=%u, max-bframes=%u, cabac=1, dct8x8=1, trellis=1",
-                         _deviceId.c_str(),
-                         rateControl,
-                         _colorBitrateKbps,
-                         qualityLevel,
-                         refs,
-                         maxBFrames);
+            if (useCqp)
+            {
+                const guint initQp = 26;
+                const guint minQp = 1;
+                const guint maxQp = 51;
+                g_object_set(G_OBJECT(encoder),
+                             "rate-control", rateControl,
+                             "init-qp", initQp,
+                             "min-qp", minQp,
+                             "max-qp", maxQp,
+                             "quality-level", qualityLevel,
+                             "cabac", TRUE,
+                             "dct8x8", TRUE,
+                             "trellis", TRUE,
+                             "refs", refs,
+                             "max-bframes", maxBFrames,
+                             "bitrate", 0,
+                             nullptr);
+                _logger.info("VAAPI H264 quality settings for %s: rate-control=cqp(%u), init-qp=%u, min-qp=%u, max-qp=%u, quality-level=%u, refs=%u, max-bframes=%u, cabac=1, dct8x8=1, trellis=1, bitrate=0",
+                             _deviceId.c_str(),
+                             rateControl,
+                             initQp,
+                             minQp,
+                             maxQp,
+                             qualityLevel,
+                             refs,
+                             maxBFrames);
+            }
+            else
+            {
+                g_object_set(G_OBJECT(encoder),
+                             "rate-control", rateControl,
+                             "bitrate", _colorBitrateKbps,
+                             "quality-level", qualityLevel,
+                             "cabac", TRUE,
+                             "dct8x8", TRUE,
+                             "trellis", TRUE,
+                             "refs", refs,
+                             "max-bframes", maxBFrames,
+                             nullptr);
+                _logger.info("VAAPI H264 quality settings for %s: rate-control=cbr(%u), bitrate=%d kbps, quality-level=%u, refs=%u, max-bframes=%u, cabac=1, dct8x8=1, trellis=1",
+                             _deviceId.c_str(),
+                             rateControl,
+                             _colorBitrateKbps,
+                             qualityLevel,
+                             refs,
+                             maxBFrames);
+            }
         }
         else
         {
@@ -1450,6 +1484,7 @@ private:
     int _colorFps{30};
     int _depthChunkSize{0};
     int _colorBitrateKbps{8000};
+    std::string _colorRateControl{"cbr"};
     bool _gstReady{false};
     bool _hdf5Ready{false};
     bool _ptsInitialized{false};
@@ -1489,7 +1524,7 @@ std::unique_ptr<FrameWriter> makePngWriter(const std::string &deviceId,
                                            const std::string &basePath,
                                            Logger &logger)
 {
-    return std::make_unique<GstHdf5FrameWriter>(deviceId, basePath, logger, 30, 0, 8000);
+    return std::make_unique<GstHdf5FrameWriter>(deviceId, basePath, logger, 30, 0, 8000, "cbr");
 }
 
 std::unique_ptr<FrameWriter> makeGstHdf5Writer(const std::string &deviceId,
@@ -1497,9 +1532,16 @@ std::unique_ptr<FrameWriter> makeGstHdf5Writer(const std::string &deviceId,
                                                Logger &logger,
                                                int colorFps,
                                                int depthChunkSize,
-                                               int colorBitrateKbps)
+                                               int colorBitrateKbps,
+                                               const std::string &colorRateControl)
 {
-    return std::make_unique<GstHdf5FrameWriter>(deviceId, basePath, logger, colorFps, depthChunkSize, colorBitrateKbps);
+    return std::make_unique<GstHdf5FrameWriter>(deviceId,
+                                                basePath,
+                                                logger,
+                                                colorFps,
+                                                depthChunkSize,
+                                                colorBitrateKbps,
+                                                colorRateControl);
 }
 
 std::unique_ptr<CameraInterface> createCamera(const CameraConfig &config, Logger &logger)
@@ -1529,7 +1571,8 @@ std::unique_ptr<FrameWriter> SimulatedCamera::makeWriter(const std::string &base
                              logger,
                              ensurePositive(_config.color.frameRate, ensurePositive(_config.frameRate, 30)),
                              _config.depth.chunkSize,
-                             _config.color.bitrateKbps);
+                             _config.color.bitrateKbps,
+                             _config.color.rateControl);
 }
 
 CaptureMetadata SimulatedCamera::captureMetadata() const
@@ -1553,7 +1596,8 @@ std::unique_ptr<FrameWriter> RealSenseCamera::makeWriter(const std::string &base
                              logger,
                              ensurePositive(_config.color.frameRate, ensurePositive(_config.frameRate, 30)),
                              _config.depth.chunkSize,
-                             _config.color.bitrateKbps);
+                             _config.color.bitrateKbps,
+                             _config.color.rateControl);
 }
 
 CaptureMetadata RealSenseCamera::captureMetadata() const

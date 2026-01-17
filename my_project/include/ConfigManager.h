@@ -62,6 +62,7 @@ struct CameraConfig
         int chunkSize = 0;
         int bitrateKbps = 15000;
         StreamType streamType = StreamType::Color;
+        std::string rateControl{"cbr"};
     };
     StreamConfig color;
     StreamConfig depth;

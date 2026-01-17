@@ -53,7 +53,8 @@
       "color": {
         "resolution": "1280x720",
         "frame_rate": 30,
-        "bitrate_kbps": 20000
+        "bitrate_kbps": 20000,
+        "rate_control": "cbr"
       },
       "depth": {
         "resolution": "1280x720",
@@ -68,7 +69,8 @@
       "color": {
         "resolution": "1280x720",
         "frame_rate": 30,
-        "bitrate_kbps": 20000
+        "bitrate_kbps": 20000,
+        "rate_control": "cbr"
       },
       "depth": {
         "resolution": "1280x720",

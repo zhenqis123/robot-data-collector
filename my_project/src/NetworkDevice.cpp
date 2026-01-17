@@ -80,5 +80,6 @@ std::unique_ptr<FrameWriter> NetworkDevice::makeWriter(const std::string &basePa
                              logger,
                              _config.frameRate,
                              _config.depth.chunkSize,
-                             _config.color.bitrateKbps);
+                             _config.color.bitrateKbps,
+                             _config.color.rateControl);
 }
