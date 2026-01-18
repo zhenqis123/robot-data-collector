@@ -199,7 +199,7 @@ void DataCapture::captureLoop(DeviceContext *ctx)
         auto stats = ctx->stats;
         if (stats)
         {
-            if (auto fps = stats->recordCapture())
+            if (auto fps = stats->recordCapture(frame))
                 _preview.updateCameraStats(frame.cameraId, *fps);
         }
 
@@ -257,10 +257,9 @@ void DataCapture::startRecording(const std::string &captureName,
             if (writer && ctxPtr->stats)
             {
                 auto stats = ctxPtr->stats;
-                auto cameraId = ctxPtr->device->name();
-                writer->setWriteCallback([this, stats, cameraId]() {
-                    if (auto fps = stats->recordWrite())
-                        _preview.updateCameraStats(cameraId, *fps);
+                writer->setWriteCallback([this, stats](const FrameData &frame) {
+                    if (auto fps = stats->recordWrite(frame))
+                        _preview.updateCameraStats(frame.cameraId, *fps);
                 });
             }
         }
@@ -385,7 +384,7 @@ void DataCapture::displayLoop(DeviceContext *ctx)
         _preview.showFrame(item.frame);
         if (item.stats)
         {
-            if (auto fps = item.stats->recordDisplay())
+            if (auto fps = item.stats->recordDisplay(item.frame))
                 _preview.updateCameraStats(item.frame.cameraId, *fps);
         }
     }
@@ -407,12 +406,8 @@ void DataCapture::storageLoop(DeviceContext *ctx)
             writer = ctx->writer;
         }
 
-        const bool writeOk = (writer && writer->write(item.frame));
-        if (writeOk && item.stats)
-        {
-            if (auto fps = item.stats->recordWrite())
-                _preview.updateCameraStats(item.frame.cameraId, *fps);
-        }
+        if (writer)
+            writer->write(item.frame);
     }
 }
 
@@ -426,18 +421,17 @@ void DataCapture::captureTacGloveFrame(const std::chrono::system_clock::time_poi
         if (ctx->device)
         {
             TacGloveDualFrameData frame = ctx->device->captureFrame(timestamp, deviceTimestampMs);
-            
-            if (ctx->stats)
-            {
-                if (auto fps = ctx->stats->recordCapture())
-                    _preview.updateCameraStats(frame.deviceId, *fps);
-            }
 
             FrameData fd;
             fd.timestamp = timestamp;
             fd.deviceTimestampMs = deviceTimestampMs;
             fd.cameraId = frame.deviceId;
             fd.tacGloveData = frame;
+            if (ctx->stats)
+            {
+                if (auto fps = ctx->stats->recordCapture(fd))
+                    _preview.updateCameraStats(fd.cameraId, *fps);
+            }
             _preview.showFrame(fd);
 
             if (_recording.load() && !_paused.load())

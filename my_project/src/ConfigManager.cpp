@@ -91,6 +91,20 @@ bool ConfigManager::load(const std::string &path)
                     stream.chunkSize = streamObj.value("chunk_size").toInt(0);
                 if (streamObj.contains("bitrate_kbps"))
                     stream.bitrateKbps = streamObj.value("bitrate_kbps").toInt(stream.bitrateKbps);
+                if (streamObj.contains("rate_control"))
+                {
+                    const auto rc = streamObj.value("rate_control").toString().toLower();
+                    if (rc == "cqp" || rc == "cbr")
+                    {
+                        stream.rateControl = rc.toStdString();
+                    }
+                    else if (!rc.isEmpty())
+                    {
+                        _logger.warn("Unknown rate_control '%s', defaulting to %s",
+                                     rc.toStdString().c_str(),
+                                     stream.rateControl.c_str());
+                    }
+                }
             }
             return stream;
         };

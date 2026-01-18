@@ -25,6 +25,7 @@ import matplotlib
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+from tqdm import tqdm
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
 
@@ -39,6 +40,7 @@ OBJECT_POINTS = np.array(
 )
 
 VIDEO_EXTS = [".mp4", ".mkv", ".avi", ".mov"]
+DEFAULT_ALIGNED_NAME = "color_aligned.mp4"
 
 
 def list_meta_files(root: Path, find_meta: bool, max_depth: int = 2) -> List[Path]:
@@ -60,6 +62,36 @@ def list_meta_files(root: Path, find_meta: bool, max_depth: int = 2) -> List[Pat
         if meta.exists():
             result.append(meta)
     return result
+
+
+def read_encode_output_name(session: Path) -> str:
+    marker_path = session / "postprocess_markers.json"
+    if not marker_path.exists():
+        return ""
+    try:
+        payload = json.loads(marker_path.read_text())
+    except json.JSONDecodeError:
+        return ""
+    steps = payload.get("steps")
+    if not isinstance(steps, dict):
+        return ""
+    entry = steps.get("encode_videos")
+    if not isinstance(entry, dict):
+        return ""
+    output_name = entry.get("output_name", "")
+    return str(output_name) if output_name else ""
+
+
+def resolve_aligned_output_name(session: Path, cam_ids: List[str]) -> str:
+    output_name = read_encode_output_name(session)
+    if output_name:
+        return output_name
+    fallback = DEFAULT_ALIGNED_NAME
+    for cam_id in cam_ids:
+        cam_dir = session / sanitize_camera_id(cam_id)
+        if not (cam_dir / fallback).exists():
+            return ""
+    return fallback
 
 
 def read_tag_map(tag_map_path: Path) -> Tuple[str, float, Dict[int, np.ndarray]]:
@@ -104,6 +136,9 @@ def load_intrinsics(meta_path: Path) -> Dict[str, Tuple[np.ndarray, np.ndarray]]
 
 def sanitize_camera_id(value: str) -> str:
     return "".join(ch if (ch.isalnum() or ch in "-_") else "_" for ch in value)
+
+def is_realsense_id(value: str) -> bool:
+    return value.startswith("RealSense")
 
 
 def parse_frame_index(value: str) -> Optional[int]:
@@ -437,7 +472,11 @@ def render_session(
         print(f"[viz] skip {session}, no rows in {frames_csv}")
         return False
     meta = json.loads(meta_path.read_text())
-    cam_ids = [str(c.get("id")) for c in meta.get("cameras", []) if c.get("id") is not None]
+    cam_ids = [
+        str(c.get("id"))
+        for c in meta.get("cameras", [])
+        if c.get("id") is not None and is_realsense_id(str(c.get("id")))
+    ]
     cam_ids = [cid for cid in cam_ids if cid in intrinsics]
     if csv_cam_ids:
         cam_ids = [cid for cid in cam_ids if cid in csv_cam_ids or cid == rows[0].get("ref_camera")]
@@ -450,12 +489,20 @@ def render_session(
         print(f"[viz] skip {session}, no valid poses in {poses_path}")
         return False
 
+    aligned_video_name = resolve_aligned_output_name(session, cam_ids)
     video_caps: Dict[str, Optional[cv2.VideoCapture]] = {}
+    aligned_read_counts: Dict[str, int] = {}
     for cam_id in cam_ids:
         cam_dir = session / sanitize_camera_id(cam_id)
-        video = resolve_color_video(cam_dir)
-        if video is None:
-            video = resolve_color_video_from_rows(session, cam_id, rows)
+        if aligned_video_name:
+            video = cam_dir / aligned_video_name
+            if not video.exists():
+                print(f"[viz] missing aligned video {video}")
+                return False
+        else:
+            video = resolve_color_video(cam_dir)
+            if video is None:
+                video = resolve_color_video_from_rows(session, cam_id, rows)
         if video is not None:
             cap = cv2.VideoCapture(str(video))
             video_caps[cam_id] = cap if cap.isOpened() else None
@@ -511,15 +558,19 @@ def render_session(
 
     events = load_events(session / "events.jsonl")
 
+    output_fps = float(fps) / max(1, stride)
     out_path = session / output_name
     writer = cv2.VideoWriter(
         str(out_path),
         cv2.VideoWriter_fourcc(*"mp4v"),
-        fps,
+        output_fps,
         (mosaic_w + pose_w, mosaic_h),
     )
+    if not writer.isOpened():
+        print(f"[viz] failed to open writer for {out_path}")
+        return False
 
-    for frame_idx, row in enumerate(rows):
+    for frame_idx, row in enumerate(tqdm(rows, desc=f"viz {session.name}", unit="frame")):
         if frame_idx % max(1, stride) != 0:
             continue
         tiles: List[np.ndarray] = []
@@ -543,7 +594,20 @@ def render_session(
             img = None
             cap = video_caps.get(cam_id)
             if cap is not None and frame_number is not None:
-                img = read_video_frame(cap, frame_number)
+                if aligned_video_name:
+                    expected = frame_idx + 1
+                    current = aligned_read_counts.get(cam_id, 0)
+                    while current < expected:
+                        ok, img = cap.read()
+                        if not ok:
+                            img = None
+                            break
+                        current += 1
+                        aligned_read_counts[cam_id] = current
+                    if current != expected:
+                        img = None
+                else:
+                    img = read_video_frame(cap, frame_number)
             if img is None and color_rel:
                 color_path = prefer_mp4_path((session / sanitize_camera_id(cam_id) / color_rel))
                 if color_path.exists() and not is_video_path(color_path):
@@ -654,11 +718,23 @@ def render_session(
             cam_scatter._offsets3d = ([], [], [])
         ax.set_title(f"Camera poses: {session.name} (frame {frame_idx})")
         canvas.draw()
-        buf = np.frombuffer(canvas.tostring_rgb(), dtype=np.uint8)
-        pose_img = buf.reshape(pose_h, pose_w, 3)
+        if hasattr(canvas, "buffer_rgba"):
+            buf = np.asarray(canvas.buffer_rgba(), dtype=np.uint8)
+            pose_img = buf[:, :, :3]
+        elif hasattr(canvas, "tostring_rgb"):
+            buf = np.frombuffer(canvas.tostring_rgb(), dtype=np.uint8)
+            pose_img = buf.reshape(pose_h, pose_w, 3)
+        else:
+            buf = np.frombuffer(canvas.tostring_argb(), dtype=np.uint8)
+            argb = buf.reshape(pose_h, pose_w, 4)
+            pose_img = argb[:, :, 1:4]
+        if pose_img.shape[0] != pose_h or pose_img.shape[1] != pose_w:
+            pose_img = cv2.resize(pose_img, (pose_w, pose_h))
         pose_img = cv2.cvtColor(pose_img, cv2.COLOR_RGB2BGR)
 
         combined = np.hstack([mosaic, pose_img])
+        if combined.shape[0] != mosaic_h or combined.shape[1] != (mosaic_w + pose_w):
+            combined = cv2.resize(combined, (mosaic_w + pose_w, mosaic_h))
 
         # Overlay events/annotations
         event_lines = events_for_frame(events, ts_ms, event_window_ms, max_event_lines)
@@ -701,7 +777,7 @@ def render_session(
             "output": out_path.name,
             "poses": poses_path.name,
             "frames": len(rows),
-            "fps": fps,
+            "fps": output_fps,
             "stride": stride,
         },
     )
@@ -714,7 +790,7 @@ def main() -> int:
     parser.add_argument("--tag-map", required=True, type=Path, help="Path to apriltag_map.json")
     parser.add_argument("--find-meta", type=str, default="true", choices=["true", "false"])
     parser.add_argument("--poses-name", default="", help="Pose JSON name in session (override auto)")
-    parser.add_argument("--output-name", default="session_visualization.mp4", help="Output video name")
+    parser.add_argument("--output-name", default="calib_vis.mp4", help="Output video name")
     parser.add_argument("--fps", type=int, default=30, help="Output FPS")
     parser.add_argument("--stride", type=int, default=1, help="Use every Nth frame")
     parser.add_argument("--cols", type=int, default=0, help="Grid columns (0 = auto)")
@@ -728,7 +804,6 @@ def main() -> int:
     tag_map_path = args.tag_map.expanduser().resolve()
     family, tag_length, tag_poses = read_tag_map(tag_map_path)
     tag_polylines = compute_tag_polylines(tag_length, tag_poses)
-
     root = Path(args.root).expanduser().resolve()
     if (root / "meta.json").exists():
         metas = [root / "meta.json"]
@@ -740,6 +815,7 @@ def main() -> int:
         return 1
 
     wrote_any = False
+    any_processed = False
     for meta in metas:
         session = meta.parent
         wrote = render_session(
@@ -760,7 +836,10 @@ def main() -> int:
             args.max_event_lines,
             args.threads,
         )
+        any_processed = True
         wrote_any = wrote_any or wrote
+    if any_processed and not wrote_any:
+        return 0
     return 0 if wrote_any else 1
 
 

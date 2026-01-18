@@ -4,7 +4,7 @@ Video utility:
 - Encode color PNG sequences or MKV videos to H.264 MP4 for all cameras in a capture
 
 Usage:
-  python -m tools.videos /path/to/capture_root --fps 30 --output-name color.mp4
+  python -m tools.videos /path/to/capture_root --fps 30 --output-name color_aligned.mp4
 """
 from __future__ import annotations
 
@@ -89,7 +89,7 @@ def derive_cameras(root: Path) -> List[str]:
             try:
                 first_row = next(reader)
                 ref_id = first_row.get("ref_camera", "")
-                if ref_id:
+                if ref_id and is_realsense_id(ref_id):
                     cams.add(ref_id)
             except StopIteration:
                 pass
@@ -98,7 +98,8 @@ def derive_cameras(root: Path) -> List[str]:
                     cid = field.replace("_color", "")
                     if cid == "ref" and "ref_camera" in (reader.fieldnames or []):
                         continue
-                    cams.add(cid)
+                    if is_realsense_id(cid):
+                        cams.add(cid)
             if cams:
                 return list(cams)
     return []
@@ -156,6 +157,9 @@ def read_camera_timestamps(csv_path: Path) -> Tuple[List[float], List[int]]:
 def sanitize_camera_id(cam_id: str) -> str:
     return "".join(ch if (ch.isalnum() or ch in "-_") else "_" for ch in cam_id)
 
+def is_realsense_id(cam_id: str) -> bool:
+    return cam_id.startswith("RealSense")
+
 
 def build_inputs(root: Path) -> Dict[str, Dict[str, Optional[Path]]]:
     """
@@ -187,6 +191,8 @@ def build_inputs(root: Path) -> Dict[str, Dict[str, Optional[Path]]]:
                     for key, val in row.items():
                         if key.endswith("_color") and key not in ("ref_color",):
                             cam_id = key.replace("_color", "")
+                            if not is_realsense_id(cam_id):
+                                continue
                             if cam_id not in result:
                                 result[cam_id] = {"video": None, "frames": []}
                             if val:
@@ -201,7 +207,7 @@ def build_inputs(root: Path) -> Dict[str, Dict[str, Optional[Path]]]:
     meta_path = root / "meta.json"
     if meta_path.exists():
         meta = json.loads(meta_path.read_text())
-        cams = [c["id"] for c in meta.get("cameras", [])]
+        cams = [c["id"] for c in meta.get("cameras", []) if is_realsense_id(str(c.get("id", "")))]
         for cid in cams:
             cam_dir = root / sanitize_camera_id(str(cid))
             color_dir = cam_dir / "color"
@@ -223,6 +229,8 @@ def build_aligned_inputs(
         result[c] = {"video": None, "frames": []}
     for row in rows:
         if ref_cam:
+            if not is_realsense_id(ref_cam):
+                continue
             ref_color = row.get("ref_color", "")
             if ref_color:
                 ref_path = root / sanitize_camera_id(ref_cam) / ref_color
@@ -234,6 +242,8 @@ def build_aligned_inputs(
         for key, val in row.items():
             if key.endswith("_color") and key not in ("ref_color",):
                 cam_id = key.replace("_color", "")
+                if not is_realsense_id(cam_id):
+                    continue
                 if val:
                     path = root / sanitize_camera_id(cam_id) / val
                     payload = result.setdefault(cam_id, {"video": None, "frames": []})
@@ -259,6 +269,29 @@ def encode_video_from_alignment(
         raise RuntimeError("Missing timestamps for aligned encode")
     if not aligned_indices and (not cam_timestamps or not cam_indices):
         raise RuntimeError("Missing timestamps for aligned encode")
+    desired_indices: List[int] = []
+    for i, ts in enumerate(ref_timestamps):
+        if aligned_indices:
+            frame_index = aligned_indices[i]
+        else:
+            idx = nearest_frame_index(cam_timestamps, ts)
+            if idx is None:
+                frame_index = 0
+            else:
+                frame_index = cam_indices[idx]
+        desired_indices.append(int(frame_index) if frame_index else 0)
+    if not desired_indices:
+        raise RuntimeError("No aligned frame indices available")
+
+    non_decreasing = True
+    last_seen = 0
+    for idx in desired_indices:
+        if idx <= 0:
+            continue
+        if idx < last_seen:
+            non_decreasing = False
+            break
+        last_seen = idx
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError(f"Failed to open video {video_path}")
@@ -270,22 +303,49 @@ def encode_video_from_alignment(
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(str(output), fourcc, fps, (w, h))
     count = 0
-    for i, ts in enumerate(tqdm(ref_timestamps, desc=f"align {output.name}", unit="frame", leave=False)):
-        if aligned_indices:
-            frame_index = aligned_indices[i]
-        else:
-            idx = nearest_frame_index(cam_timestamps, ts)
-            if idx is None:
-                continue
-            frame_index = cam_indices[idx]
-        if frame_index <= 0:
-            continue
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index - 1)
-        ok, frame = cap.read()
-        if not ok:
-            continue
-        writer.write(frame)
-        count += 1
+    if any(idx <= 0 for idx in desired_indices):
+        cap.release()
+        writer.release()
+        raise RuntimeError(f"Invalid aligned frame indices for {output.name}")
+
+    if non_decreasing:
+        next_idx = 0
+        current_frame_index = 0
+        last_frame = None
+        pbar = tqdm(total=len(desired_indices), desc=f"align {output.name}", unit="frame", leave=False)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        while next_idx < len(desired_indices):
+            target_index = desired_indices[next_idx]
+            while current_frame_index < target_index:
+                ok, frame = cap.read()
+                if not ok:
+                    cap.release()
+                    writer.release()
+                    raise RuntimeError(f"Failed to read frame {target_index} from {video_path}")
+                current_frame_index += 1
+                last_frame = frame
+            if last_frame is None or current_frame_index < target_index:
+                cap.release()
+                writer.release()
+                raise RuntimeError(f"Missing frame {target_index} in {video_path}")
+            while next_idx < len(desired_indices) and desired_indices[next_idx] == target_index:
+                writer.write(last_frame)
+                count += 1
+                next_idx += 1
+                pbar.update(1)
+        pbar.close()
+    else:
+        for i, _ in enumerate(tqdm(ref_timestamps, desc=f"align {output.name}", unit="frame", leave=False)):
+            frame_index = desired_indices[i]
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index - 1)
+            ok, frame = cap.read()
+            if not ok:
+                cap.release()
+                writer.release()
+                raise RuntimeError(f"Failed to read frame {frame_index} from {video_path}")
+            writer.write(frame)
+            count += 1
+
     cap.release()
     writer.release()
     print(f"[videos] wrote {output} from {count} aligned frames")
@@ -329,9 +389,9 @@ def auto_process(root: Path, fps: float, output_name: str) -> None:
                 if video_path.resolve() == out.resolve():
                     print(f"[videos] skip {cid}: output matches source {video_path.name}")
                     continue
-                if aligned_rows and ref_cam and cid != ref_cam and ref_timestamps:
+                if aligned_rows and ref_cam and ref_timestamps:
                     aligned_indices = []
-                    key = f"{cid}_frame_index"
+                    key = "ref_frame_index" if cid == ref_cam else f"{cid}_frame_index"
                     for row in valid_rows:
                         value = row.get(key, "")
                         if value == "":
@@ -392,7 +452,11 @@ def load_ref_timestamps(root: Path) -> Tuple[List[float], str]:
     meta_path = root / "meta.json"
     if meta_path.exists():
         meta = json.loads(meta_path.read_text())
-        cams = [str(c["id"]) for c in meta.get("cameras", []) if "id" in c]
+        cams = [
+            str(c["id"])
+            for c in meta.get("cameras", [])
+            if "id" in c and is_realsense_id(str(c["id"]))
+        ]
         if cams:
             cam_id = cams[0]
             cam_dir = root / sanitize_camera_id(cam_id)
@@ -492,7 +556,8 @@ def main():
     parser = argparse.ArgumentParser(description="Encode color frames to MP4 for all cameras in a capture")
     parser.add_argument("root", help="Root directory containing capture folders or meta.json")
     parser.add_argument("--fps", type=float, default=30.0, help="Frames per second")
-    parser.add_argument("--output-name", default="color.mp4", help="Output video filename per camera")
+    parser.add_argument("--output-name", default="color_aligned.mp4",
+                        help="Output video filename per camera (aligned)")
     parser.add_argument("--find-meta", type=str, default="true",
                         choices=["true", "false"],
                         help="Search meta.json recursively (true) or only root/*/meta.json (false)")

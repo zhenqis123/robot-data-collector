@@ -25,6 +25,9 @@ FRAME_RE = re.compile(r"(\d+)$")
 def sanitize_camera_id(cam_id: str) -> str:
     return "".join(ch if (ch.isalnum() or ch in "-_") else "_" for ch in cam_id)
 
+def is_realsense_id(cam_id: str) -> bool:
+    return cam_id.startswith("RealSense")
+
 
 def parse_frame_index(path_value: str) -> Optional[int]:
     if not path_value:
@@ -106,7 +109,9 @@ def timestamps_from_capture_root(capture_root: Path) -> List[Path]:
     if not meta_path.exists():
         return []
     meta = json.loads(meta_path.read_text())
-    cam_ids = [str(c["id"]) for c in meta.get("cameras", []) if "id" in c]
+    cam_ids = [
+        str(c["id"]) for c in meta.get("cameras", []) if "id" in c and is_realsense_id(str(c["id"]))
+    ]
     paths: List[Path] = []
     for cid in cam_ids:
         cam_dir = capture_root / sanitize_camera_id(cid)

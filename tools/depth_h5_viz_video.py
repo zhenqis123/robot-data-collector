@@ -38,7 +38,7 @@ def sanitize_camera_id(value: str) -> str:
 
 
 def find_depth_files(root: Path, include_aligned: bool) -> List[Path]:
-    patterns = ["depth.h5"]
+    patterns = ["depth.h5", "depth_filtered.h5"]
     if include_aligned:
         patterns.append("depth_aligned.h5")
     results: List[Path] = []
@@ -303,7 +303,7 @@ def main() -> int:
     parser.add_argument("--output-name", default=None, help="Output file name (default: <depth>.stem_viz.mp4)")
     parser.add_argument("--fps", type=float, default=0.0, help="FPS override; 0=auto from timestamps.csv")
     parser.add_argument("--depth-scale", type=float, default=0.0, help="Depth scale override in meters")
-    parser.add_argument("--include-aligned", type=str, default="false", choices=["true", "false"],
+    parser.add_argument("--include-aligned", type=str, default="true", choices=["true", "false"],
                         help="Include depth_aligned.h5 when scanning directories")
     parser.add_argument("--codec", default="avc1", help="FourCC codec (default avc1, or 'auto')")
     parser.add_argument("--allow-fallback", action="store_true", help="Allow fallback codecs if requested fails")
