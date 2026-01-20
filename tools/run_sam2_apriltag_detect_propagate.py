@@ -290,7 +290,7 @@ def _get_apriltag_detector(family: str):
             from pupil_apriltags import Detector
         except ModuleNotFoundError as exc:
             raise RuntimeError("pupil_apriltags not available; install pupil-apriltags") from exc
-        detector = Detector(families=family_norm)
+        detector = Detector(families=family_norm, quad_decimate=1.0)
         _APRILTAG_DETECTORS[family_norm] = detector
     return detector
 

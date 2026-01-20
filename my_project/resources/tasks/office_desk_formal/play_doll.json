@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_doll_play_01",
+    "name": "Doll play setup",
+    "name_cn": "玩玩偶场景",
+    "description": "A desk with a soft plush doll or a jointed action figure",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "doll",
+        "category": "toys",
+        "state": {
+          "placement": "on_table",
+          "relative": "center",
+          "condition": "sitting/lying"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_playing_doll",
+    "name": "Play with a doll",
+    "name_cn": "玩玩偶",
+    "description": "Interact with a doll by changing its posture or simulating social actions",
+    "spoken_prompt": "Task: Let's play with the doll. Please pick it up and interact with it.",
+    "spoken_prompt_cn": "任务描述：让我们来玩玩偶。请把它拿起并与它互动。",
+    "subtasks": [
+      {
+        "id": "st_doll_interaction",
+        "description": "Execute the doll manipulation sequence",
+        "spoken_prompt": "Subtask: Start playing with the doll.",
+        "spoken_prompt_cn": "子任务描述：开始玩玩偶操作。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "doll",
+            "role": "manipulated"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Start playing with the doll by picking it up or adjusting its pose",
+            "spoken_prompt": "Step one: start playing with the doll.",
+            "spoken_prompt_cn": "第一步：开始玩玩偶。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "doll",
+                "role": "manipulated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Handle the doll gently; if it is an articulated figure, avoid overextending the joints."
+  }
+}

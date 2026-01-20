@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_paper_folding_01",
+    "name": "Paper folding setup",
+    "name_cn": "折纸场景",
+    "description": "A square or rectangular piece of paper placed flat on a desk",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "paper_sheet",
+        "category": "paper",
+        "state": {
+          "placement": "on_desk",
+          "relative": "center",
+          "condition": "flat"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_fold_paper_simple",
+    "name": "Fold paper in half",
+    "name_cn": "对折纸张",
+    "description": "The action of folding a sheet of paper to align its edges",
+    "spoken_prompt": "Task: We are going to fold this paper. The goal is to fold it neatly in half.",
+    "spoken_prompt_cn": "任务描述：我们要折叠这张纸。目标是把它整齐地对折。",
+    "subtasks": [
+      {
+        "id": "st_folding_action",
+        "description": "Execute the folding sequence",
+        "spoken_prompt": "Subtask: Start folding the paper.",
+        "spoken_prompt_cn": "子任务描述：开始折纸操作。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "paper_sheet",
+            "role": "manipulated"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Start folding the paper by bringing edges together",
+            "spoken_prompt": "Step one: start folding the paper.",
+            "spoken_prompt_cn": "第一步：开始折纸。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "paper_sheet",
+                "role": "manipulated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Focus on the alignment of the edges and the sharpness of the crease."
+  }
+}

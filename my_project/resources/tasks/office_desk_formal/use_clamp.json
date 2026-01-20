@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_clamp_fixation_01",
+    "name": "C-clamp operation setup",
+    "name_cn": "C型夹具操作场景",
+    "description": "A metal C-clamp with a manual screw bolt held in hand or placed on a table",
+    "objects": [
+      {
+        "object_id": "obj_clamp",
+        "name": "c_clamp",
+        "category": "tools",
+        "state": {
+          "placement": "in_hand",
+          "relative": "center"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_clamp_tightening",
+    "name": "Tighten the clamp screw",
+    "name_cn": "拧紧夹具螺栓",
+    "description": "Rotate the eyebolt to close the clamp gap",
+    "spoken_prompt": "Task: Please rotate the screw to tighten the clamp.",
+    "spoken_prompt_cn": "任务描述：请旋转螺栓以拧紧夹具。",
+    "subtasks": [
+      {
+        "id": "st_screw_rotation",
+        "description": "Rotate the bolt clockwise",
+        "spoken_prompt": "Subtask: Start rotating the screw bolt.",
+        "spoken_prompt_cn": "子任务描述：开始旋转螺栓。",
+        "involved_objects": [
+          {
+            "object_id": "obj_clamp",
+            "name": "c_clamp",
+            "role": "manipulated"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Start rotating the eyebolt to adjust the clamp gap",
+            "spoken_prompt": "Step one: start rotating the screw.",
+            "spoken_prompt_cn": "第一步：开始旋转螺栓。",
+            "involved_objects": [
+              {
+                "object_id": "obj_clamp",
+                "name": "c_clamp",
+                "role": "manipulated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Observe the changing distance between the screw head and the base."
+  }
+}

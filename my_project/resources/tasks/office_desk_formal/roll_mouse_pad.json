@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_mousepad_cycle_01",
+    "name": "Mouse pad manipulation setup",
+    "name_cn": "鼠标垫操作场景",
+    "description": "A desk surface with a large flexible mouse pad",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "mouse_pad",
+        "category": "office_accessories",
+        "state": {
+          "placement": "on_desk",
+          "relative": "center",
+          "condition": "flat"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_mousepad_roll_unroll",
+    "name": "Roll and unroll mouse pad",
+    "name_cn": "卷起并展开鼠标垫",
+    "description": "First roll the mouse pad into a cylinder, then unroll it back to a flat state",
+    "spoken_prompt": "Task: We will practice rolling and unrolling the mouse pad. First, roll it up, and then spread it back out.",
+    "spoken_prompt_cn": "任务描述：我们要练习卷起和展开鼠标垫。首先把它卷起来，然后再把它铺平展开。",
+    "subtasks": [
+      {
+        "id": "st_mousepad_cycle_flow",
+        "description": "Execute the rolling and unrolling sequence",
+        "spoken_prompt": "Subtask: Please follow the steps to roll and then unroll the pad.",
+        "spoken_prompt_cn": "子任务描述：请按照步骤卷起并展开鼠标垫。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "mouse_pad",
+            "role": "manipulated"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Roll up the mouse pad from one edge",
+            "spoken_prompt": "Step one: roll up the mouse pad.",
+            "spoken_prompt_cn": "第一步：将鼠标垫卷起来。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "mouse_pad",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Unroll the mouse pad back to flat",
+            "spoken_prompt": "Step two: unroll the mouse pad.",
+            "spoken_prompt_cn": "第二步：将鼠标垫展开。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "mouse_pad",
+                "role": "manipulated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Ensure the mouse pad is rolled tightly in step one and fully flattened in step two."
+  }
+}

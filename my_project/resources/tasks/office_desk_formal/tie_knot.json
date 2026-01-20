@@ -1,0 +1,88 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_knot_tying_01",
+    "name": "Knot tying setup",
+    "name_cn": "绳子打结场景",
+    "description": "A flexible cotton rope or shoelace placed horizontally on a flat table surface",
+    "objects": [
+      {
+        "object_id": "obj_rope_1",
+        "name": "cotton_rope",
+        "category": "flexible_object",
+        "state": {
+          "placement": "on_table",
+          "relative": "center",
+          "condition": "unknotted"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_basic_knot_tying",
+    "name": "Tie a basic overhand knot",
+    "name_cn": "打一个基础单结",
+    "description": "Manipulate a single rope to form a standard overhand knot at its center",
+    "spoken_prompt": "Task: We are going to tie a simple knot. Please pick up the ends of the rope and tie a basic overhand knot in the middle.",
+    "spoken_prompt_cn": "任务描述：我们要打一个简单的结。请拿起绳子的两端，在中间部位打一个基础的单结。",
+    "subtasks": [
+      {
+        "id": "st_knot_execution_flow",
+        "description": "Execute the loop and pull sequence",
+        "spoken_prompt": "Subtask: Follow the steps to form the loop and secure the knot.",
+        "spoken_prompt_cn": "子任务描述：按照步骤形成绳圈并紧固绳结。",
+        "involved_objects": [
+          {
+            "object_id": "obj_rope_1",
+            "name": "cotton_rope",
+            "role": "manipulated"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Form a loop with the rope",
+            "spoken_prompt": "Step one: cross one end of the rope over the other to create a loop.",
+            "spoken_prompt_cn": "第一步：将绳子的一端交叉叠在另一端之上，形成一个绳圈。",
+            "involved_objects": [
+              {
+                "object_id": "obj_rope_1",
+                "name": "cotton_rope",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Thread the end through the loop",
+            "spoken_prompt": "Step two: tuck the end of the rope through the loop you just created.",
+            "spoken_prompt_cn": "第二步：将绳子的一头穿过刚才形成的绳圈。",
+            "involved_objects": [
+              {
+                "object_id": "obj_rope_1",
+                "name": "cotton_rope",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "description": "Tighten the knot",
+            "spoken_prompt": "Step three: pull both ends of the rope in opposite directions to tighten the knot.",
+            "spoken_prompt_cn": "第三步：向相反方向拉动绳子两端，将结收紧。",
+            "involved_objects": [
+              {
+                "object_id": "obj_rope_1",
+                "name": "cotton_rope",
+                "role": "manipulated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "The knot should be centered on the rope; ensure the tension is firm but not excessive."
+  }
+}

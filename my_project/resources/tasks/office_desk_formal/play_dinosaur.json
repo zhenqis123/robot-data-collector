@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_toy_dinosaur_01",
+    "name": "Dinosaur toy play setup",
+    "name_cn": "玩恐龙玩具场景",
+    "description": "A desk with a plastic dinosaur toy figurine",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "dinosaur_toy",
+        "category": "toys",
+        "state": {
+          "placement": "on_table",
+          "relative": "center"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_playing_dinosaur",
+    "name": "Play with dinosaur toy",
+    "name_cn": "玩恐龙玩具",
+    "description": "Engage in imaginative play by manipulating the dinosaur toy on the table",
+    "spoken_prompt": "Task: Let's play with the dinosaur. Please pick it up and move it around as if it's walking.",
+    "spoken_prompt_cn": "任务描述：让我们来玩恐龙玩具。请把它拿起，并像走路一样来回移动它。",
+    "subtasks": [
+      {
+        "id": "st_toy_interaction",
+        "description": "Execute the toy manipulation sequence",
+        "spoken_prompt": "Subtask: Start playing with the dinosaur.",
+        "spoken_prompt_cn": "子任务描述：开始玩恐龙玩具。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "dinosaur_toy",
+            "role": "manipulated"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Start playing with the dinosaur toy by moving it on the desk",
+            "spoken_prompt": "Step one: start playing with the dinosaur.",
+            "spoken_prompt_cn": "第一步：开始玩恐龙。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "dinosaur_toy",
+                "role": "manipulated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Simulate walking or roaring movements; ensure the toy remains within the designated desk area."
+  }
+}

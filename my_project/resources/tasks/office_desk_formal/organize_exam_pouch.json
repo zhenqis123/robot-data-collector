@@ -1,0 +1,99 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_exam_pouch_01",
+    "name": "Exam pouch organization setup",
+    "name_cn": "整理考试袋场景",
+    "description": "A table with an empty exam pouch and several stationery items like pens, erasers, and a ruler",
+    "objects": [
+      {
+        "object_id": "obj_pouch",
+        "name": "exam_pouch",
+        "category": "bag",
+        "state": {
+          "placement": "on_table",
+          "relative": "center",
+          "condition": "open"
+        }
+      },
+      {
+        "object_id": "obj_stationery_set",
+        "name": "stationery_items",
+        "category": "stationery",
+        "state": {
+          "placement": "on_table",
+          "relative": "around the pouch"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_organize_exam_pouch",
+    "name": "Organize exam pouch",
+    "name_cn": "整理考试袋",
+    "description": "Put all stationery items into the pouch and then take them all out",
+    "spoken_prompt": "Task: We will practice organizing the exam pouch. First, put everything inside, and then take everything out.",
+    "spoken_prompt_cn": "任务描述：我们要练习整理考试袋。首先把所有东西放进去，然后再全部取出来。",
+    "subtasks": [
+      {
+        "id": "st_pouch_management",
+        "description": "Pack and unpack the exam pouch",
+        "spoken_prompt": "Subtask: Please follow the steps to fill and empty the pouch.",
+        "spoken_prompt_cn": "子任务描述：请按照步骤装入并清空考试袋。",
+        "involved_objects": [
+          {
+            "object_id": "obj_pouch",
+            "name": "exam_pouch",
+            "role": "container"
+          },
+          {
+            "object_id": "obj_stationery_set",
+            "name": "stationery_items",
+            "role": "manipulated"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Put all items into the exam pouch",
+            "spoken_prompt": "Step one: put all the items into the exam pouch.",
+            "spoken_prompt_cn": "第一步：把所有东西放到考试袋里面。",
+            "involved_objects": [
+              {
+                "object_id": "obj_stationery_set",
+                "name": "stationery_items",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_pouch",
+                "name": "exam_pouch",
+                "role": "target_container"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Take all items out of the exam pouch",
+            "spoken_prompt": "Step two: take all the items out of the exam pouch.",
+            "spoken_prompt_cn": "第二步：把所有东西从考试袋取出来。",
+            "involved_objects": [
+              {
+                "object_id": "obj_stationery_set",
+                "name": "stationery_items",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_pouch",
+                "name": "exam_pouch",
+                "role": "source_container"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Ensure all small items are fully contained or removed; handle stationery with care to avoid damage."
+  }
+}

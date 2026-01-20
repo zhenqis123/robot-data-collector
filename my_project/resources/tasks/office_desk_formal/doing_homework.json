@@ -1,0 +1,72 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_homework_comprehensive_01",
+    "name": "Doing homework setup with multiple tools",
+    "name_cn": "写作业综合场景",
+    "description": "A desk with paper, a ruler, an eraser, and a pen arranged for a student",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "paper_sheet",
+        "category": "paper",
+        "state": { "placement": "on_desk", "relative": "center" }
+      },
+      {
+        "object_id": "obj_2",
+        "name": "ruler",
+        "category": "stationery",
+        "state": { "placement": "on_desk", "relative": "left of paper" }
+      },
+      {
+        "object_id": "obj_3",
+        "name": "eraser",
+        "category": "stationery",
+        "state": { "placement": "on_desk", "relative": "top right of paper" }
+      },
+      {
+        "object_id": "obj_4",
+        "name": "pen",
+        "category": "stationery",
+        "state": { "placement": "on_desk", "relative": "right of paper" }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_homework_comprehensive",
+    "name": "Perform homework tasks",
+    "name_cn": "执行写作业任务",
+    "description": "Use the pen, ruler, and eraser to perform writing and drawing tasks on the paper",
+    "spoken_prompt": "Task: Please start your homework. Use the pen to write, the ruler to draw a line, and the eraser to correct any mistakes.",
+    "spoken_prompt_cn": "任务描述：请开始写作业。用笔写字，用尺子画线，并用橡皮擦掉错误。",
+    "subtasks": [
+      {
+        "id": "st_homework_flow",
+        "description": "Execute the integrated stationery use",
+        "spoken_prompt": "Subtask: Start using your stationery for homework.",
+        "spoken_prompt_cn": "子任务描述：开始使用文具写作业。",
+        "involved_objects": [
+          { "object_id": "obj_1", "name": "paper_sheet", "role": "target_surface" },
+          { "object_id": "obj_2", "name": "ruler", "role": "manipulated" },
+          { "object_id": "obj_3", "name": "eraser", "role": "manipulated" },
+          { "object_id": "obj_4", "name": "pen", "role": "manipulated" }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Start doing homework using the pen, ruler, and eraser",
+            "spoken_prompt": "Step one: start doing your homework.",
+            "spoken_prompt_cn": "第一步：开始写作业。",
+            "involved_objects": [
+              { "object_id": "obj_1", "name": "paper_sheet", "role": "target_surface" },
+              { "object_id": "obj_4", "name": "pen", "role": "manipulated" }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Ensure all tools are used sequentially as needed for a realistic homework simulation."
+  }
+}

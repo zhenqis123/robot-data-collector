@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_chinese_checkers_01",
+    "name": "Chinese checkers setup",
+    "name_cn": "跳棋对弈场景",
+    "description": "A star-shaped Chinese Checkers board with peg-style or marble-style pieces",
+    "objects": [
+      {
+        "object_id": "obj_board",
+        "name": "checkers_board",
+        "category": "game_equipment",
+        "state": {
+          "placement": "on_table",
+          "relative": "center"
+        }
+      },
+      {
+        "object_id": "obj_pegs",
+        "name": "checker_pieces",
+        "category": "game_piece",
+        "state": {
+          "placement": "in_starting_area",
+          "relative": "corners of the star"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_playing_checkers_simple",
+    "name": "Move a checker piece",
+    "name_cn": "下跳棋",
+    "description": "Pick up a checker piece and move it to a target hole on the board",
+    "spoken_prompt": "Task: We will practice playing Chinese Checkers. The goal is to move a piece to another hole.",
+    "spoken_prompt_cn": "任务描述：我们要练习下跳棋。目标是将一枚棋子移动到另一个孔位中。",
+    "subtasks": [
+      {
+        "id": "st_moving_piece",
+        "description": "Execute the piece movement action",
+        "spoken_prompt": "Subtask: Start moving the checker piece.",
+        "spoken_prompt_cn": "子任务描述：开始移动跳棋棋子。",
+        "involved_objects": [
+          {
+            "object_id": "obj_pegs",
+            "name": "checker_piece",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_board",
+            "name": "checkers_board",
+            "role": "target_surface"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Start playing Chinese Checkers by picking up a piece and placing it in a new hole",
+            "spoken_prompt": "Step one: start playing Chinese Checkers.",
+            "spoken_prompt_cn": "第一步：开始下跳棋。",
+            "involved_objects": [
+              {
+                "object_id": "obj_pegs",
+                "name": "checker_piece",
+                "role": "manipulated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Ensure the piece is fully inserted into the hole; focus on the vertical lift and drop motion."
+  }
+}

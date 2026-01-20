@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_page_turning_01",
+    "name": "Page turning setup",
+    "name_cn": "翻页场景",
+    "description": "An open book or notebook placed on a desk",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "book",
+        "category": "media",
+        "state": {
+          "placement": "on_desk",
+          "relative": "center",
+          "condition": "open"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_turn_page_simple",
+    "name": "Turn a page",
+    "name_cn": "翻页",
+    "description": "The action of flipping a single page in a book",
+    "spoken_prompt": "Task: Please turn the page of the book.",
+    "spoken_prompt_cn": "任务描述：请翻一下书页。",
+    "subtasks": [
+      {
+        "id": "st_page_turning",
+        "description": "Execute the page flip",
+        "spoken_prompt": "Subtask: Turn the page.",
+        "spoken_prompt_cn": "子任务描述：进行翻页操作。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "book",
+            "role": "manipulated"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Start turning the page of the book",
+            "spoken_prompt": "Step one: start turning the page.",
+            "spoken_prompt_cn": "第一步：开始翻页。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "book",
+                "role": "manipulated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Use the thumb and index finger to separate a single sheet and flip it to the other side."
+  }
+}

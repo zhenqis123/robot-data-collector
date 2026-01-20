@@ -128,11 +128,11 @@ def read_camera_timestamps(csv_path: Path) -> Tuple[List[float], List[int]]:
         counter = 0
         for row in reader:
             ts_val = row.get("timestamp_ms", "")
-            if ts_val == "":
+            if ts_val is None or ts_val == "":
                 continue
             try:
                 ts = float(ts_val)
-            except ValueError:
+            except (TypeError, ValueError):
                 continue
             frame_index = row.get("frame_index", "")
             idx = None

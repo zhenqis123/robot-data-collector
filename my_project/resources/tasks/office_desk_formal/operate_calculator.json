@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_calculator_simple_01",
+    "name": "Calculator interaction setup",
+    "name_cn": "计算器交互场景",
+    "description": "A calculator sitting on a desk ready for use",
+    "objects": [
+      {
+        "object_id": "obj_1",
+        "name": "calculator",
+        "category": "electronics",
+        "state": {
+          "placement": "on_desk",
+          "relative": "center"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_calculator_init",
+    "name": "Initialize calculator",
+    "name_cn": "初始化计算器",
+    "description": "The initial action to begin using the calculator",
+    "spoken_prompt": "Task: Please prepare the calculator for use.",
+    "spoken_prompt_cn": "任务描述：请准备好计算器以便使用。",
+    "subtasks": [
+      {
+        "id": "st_start_op",
+        "description": "Start operation",
+        "spoken_prompt": "Subtask: Start using the calculator.",
+        "spoken_prompt_cn": "子任务描述：开始使用计算器。",
+        "involved_objects": [
+          {
+            "object_id": "obj_1",
+            "name": "calculator",
+            "role": "manipulated"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Start using the calculator by pressing the power/clear button",
+            "spoken_prompt": "Step one: start using the calculator.",
+            "spoken_prompt_cn": "第一步：开始使用计算器。",
+            "involved_objects": [
+              {
+                "object_id": "obj_1",
+                "name": "calculator",
+                "role": "manipulated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "The action is complete once the display shows zero or is cleared."
+  }
+}

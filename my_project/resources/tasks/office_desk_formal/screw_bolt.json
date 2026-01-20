@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_clamp_threading_01",
+    "name": "Clamp bolt manipulation setup",
+    "name_cn": "夹具螺栓拧转场景",
+    "description": "A metal C-clamp with a threaded eyebolt",
+    "objects": [
+      {
+        "object_id": "obj_clamp_body",
+        "name": "clamp_frame",
+        "category": "tools",
+        "state": {
+          "placement": "on_table/in_hand",
+          "relative": "center"
+        }
+      },
+      {
+        "object_id": "obj_bolt",
+        "name": "threaded_eyebolt",
+        "category": "hardware",
+        "state": {
+          "placement": "inserted_in_frame",
+          "condition": "threaded"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_bolt_screw_unscrew",
+    "name": "Screw and unscrew the bolt",
+    "name_cn": "拧入与拧起螺栓",
+    "description": "Rotate the eyebolt clockwise to screw it into the base, then counter-clockwise to unscrew it",
+    "spoken_prompt": "Task: We will practice threading the bolt. First, screw it all the way in, and then unscrew it.",
+    "spoken_prompt_cn": "任务描述：我们要练习拧动螺栓。首先把它完全拧进去，然后再把它拧出来。",
+    "subtasks": [
+      {
+        "id": "st_bolt_cycle_flow",
+        "description": "Execute the bidirectional rotation sequence",
+        "spoken_prompt": "Subtask: Please screw and then unscrew the bolt from the frame.",
+        "spoken_prompt_cn": "子任务描述：请在支架上拧入并拧出螺栓。",
+        "involved_objects": [
+          {
+            "object_id": "obj_bolt",
+            "name": "threaded_eyebolt",
+            "role": "manipulated"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Screw the bolt into the base by rotating clockwise",
+            "spoken_prompt": "Step one: start screwing the bolt into the base.",
+            "spoken_prompt_cn": "第一步：开始将螺栓拧入底座。",
+            "involved_objects": [
+              {
+                "object_id": "obj_bolt",
+                "name": "threaded_eyebolt",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Unscrew the bolt from the base by rotating counter-clockwise",
+            "spoken_prompt": "Step two: start unscrewing the bolt from the base.",
+            "spoken_prompt_cn": "第二步：开始将螺栓从底座拧起。",
+            "involved_objects": [
+              {
+                "object_id": "obj_bolt",
+                "name": "threaded_eyebolt",
+                "role": "manipulated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Ensure smooth rotation along the thread axis; stop when resistance is felt at the end of the thread."
+  }
+}

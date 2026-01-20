@@ -1,0 +1,63 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_go_game_01",
+    "name": "Go game setup",
+    "name_cn": "围棋对弈场景",
+    "description": "A Go board (Goban) placed on a table with two bowls containing black and white stones",
+    "objects": [
+      {
+        "object_id": "obj_board",
+        "name": "go_board",
+        "category": "game_equipment",
+        "state": { "placement": "on_table", "relative": "center" }
+      },
+      {
+        "object_id": "obj_stones_black",
+        "name": "black_stones_bowl",
+        "category": "game_piece",
+        "state": { "placement": "on_table", "relative": "bottom_right" }
+      },
+      {
+        "object_id": "obj_stones_white",
+        "name": "white_stones_bowl",
+        "category": "game_piece",
+        "state": { "placement": "on_table", "relative": "bottom_left" }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_playing_go_simple",
+    "name": "Play a move in Go",
+    "name_cn": "下围棋",
+    "description": "Pick up a stone from the bowl and place it on an intersection of the Go board",
+    "spoken_prompt": "Task: We will practice playing Go. The goal is to pick up a stone and place it accurately on the board.",
+    "spoken_prompt_cn": "任务描述：我们要练习下围棋。目标是从棋罐中取出一枚棋子并准确地落在棋盘上。",
+    "subtasks": [
+      {
+        "id": "st_placing_stone",
+        "description": "Execute the stone placement action",
+        "spoken_prompt": "Subtask: Start playing the Go game.",
+        "spoken_prompt_cn": "子任务描述：开始下围棋操作。",
+        "involved_objects": [
+          { "object_id": "obj_stones_black", "name": "black_stones", "role": "manipulated" },
+          { "object_id": "obj_board", "name": "go_board", "role": "target_surface" }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Start playing Go by picking up a stone and placing it on the board",
+            "spoken_prompt": "Step one: start playing Go.",
+            "spoken_prompt_cn": "第一步：开始下围棋。",
+            "involved_objects": [
+              { "object_id": "obj_stones_black", "name": "stone", "role": "manipulated" }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "The stone should be held between the index and middle fingers (traditional grip) and placed on a grid intersection."
+  }
+}

@@ -18,12 +18,13 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
+from multiprocessing import get_context
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import cv2
 import numpy as np
 from tqdm import tqdm
-from functools import lru_cache
 import os
 from datetime import datetime, timezone
 
@@ -103,72 +104,6 @@ def prepare_meta(cam: Dict) -> Dict:
         "color_fps": int(color_stream.get("fps") or 30),
         "depth_fps": int(depth_stream.get("fps") or 30),
     }
-
-
-@lru_cache(maxsize=32)
-def precompute_map(depth_shape: tuple, Kd_key: tuple, Kc_key: tuple, R_key: tuple, t_key: tuple):
-    h_d, w_d = depth_shape
-    fx_d, fy_d, cx_d, cy_d = Kd_key
-    fx_c, fy_c, cx_c, cy_c, w_c, h_c = Kc_key
-    R = np.array(R_key, dtype=np.float32).reshape(3, 3)
-    t = np.array(t_key, dtype=np.float32).reshape(3, 1)
-
-    ys, xs = np.meshgrid(np.arange(h_d, dtype=np.float32), np.arange(w_d, dtype=np.float32), indexing="ij")
-    ones = np.ones_like(xs, dtype=np.float32)
-    pixels = np.stack([xs, ys, ones], axis=-1).reshape(-1, 3).T  # (3, N) with z=1 placeholder
-
-    # 3D direction vectors (unit depth)
-    X = (pixels[0] - cx_d) / fx_d
-    Y = (pixels[1] - cy_d) / fy_d
-    Z = np.ones_like(X)
-    dirs = np.stack([X, Y, Z], axis=0)  # (3, N)
-
-    dirs_c = R.dot(dirs) + t  # (3,N)
-    Xc, Yc, Zc = dirs_c
-    u = (Xc / (Zc + 1e-6)) * fx_c + cx_c
-    v = (Yc / (Zc + 1e-6)) * fy_c + cy_c
-    u = u.reshape(h_d, w_d)
-    v = v.reshape(h_d, w_d)
-
-    # Integer target coords and validity mask (independent of depth values)
-    u_i = np.round(u).astype(np.int32)
-    v_i = np.round(v).astype(np.int32)
-    mask = (Zc.reshape(h_d, w_d) > 0) & (u_i >= 0) & (u_i < w_c) & (v_i >= 0) & (v_i < h_c)
-    return u_i, v_i, mask
-
-
-def compute_alignment(depth_raw: np.ndarray, meta: Dict) -> np.ndarray:
-    scale = float(meta["depth_scale"])
-    if scale <= 0:
-        raise ValueError("depth_scale_m must be > 0")
-
-    h_d, w_d = depth_raw.shape
-    Kd = meta["Kd"]
-    Kc = meta["Kc"]
-    u_i, v_i, mask = precompute_map(
-        (h_d, w_d),
-        (Kd["fx"], Kd["fy"], Kd["cx"], Kd["cy"]),
-        (Kc["fx"], Kc["fy"], Kc["cx"], Kc["cy"], Kc["w"], Kc["h"]),
-        tuple(meta["R"].flatten()),
-        tuple(meta["t"].flatten()),
-    )
-
-    depth_valid = depth_raw.astype(np.float32) * scale  # meters
-    z = depth_valid[mask]
-    if z.size == 0:
-        return np.zeros((Kc["h"], Kc["w"]), dtype=np.uint16)
-
-    u_flat = u_i[mask].ravel()
-    v_flat = v_i[mask].ravel()
-    Hc, Wc = int(Kc["h"]), int(Kc["w"])
-    target_idx = v_flat * Wc + u_flat
-
-    # Start with max uint16; will take min per pixel
-    out_flat = np.full(Hc * Wc, np.iinfo(np.uint16).max, dtype=np.uint16)
-    z_mm = (z / scale).astype(np.uint16)
-    np.minimum.at(out_flat, target_idx, z_mm)
-    out_flat[out_flat == np.iinfo(np.uint16).max] = 0
-    return out_flat.reshape(Hc, Wc)
 
 
 def distortion_from_meta(value: str) -> int:
@@ -388,117 +323,99 @@ def _parse_frame_index(path: Path, fallback: int) -> int:
         return fallback
 
 
-def process_capture(meta_path: Path, workers: int, delete_original_depth: bool) -> None:
+def _process_camera_task(meta_path_str: str, cam_id: str, delete_original_depth: bool) -> Tuple[str, str, bool, str]:
     if rs is None:
-        print("[align] pyrealsense2 not installed; cannot use official alignment")
-        return
-    meta = load_meta(meta_path)
-    cam_entries = {
-        c["id"]: c for c in meta.get("cameras", []) if is_realsense_id(str(c.get("id", "")))
-    }
-    base = meta_path.parent
-    if not cam_entries:
-        return
-    if should_skip_step(base, "align_depth"):
-        print(f"[align] skip {base}, already aligned depth")
-        return
-    processed_cams = []
-    for cam_id, cam in cam_entries.items():
-        cam_dir = base / sanitize_camera_id(str(cam_id))
-        depth_dir = cam_dir / "depth"
-        color_dir = cam_dir / "color"
-        aligner = None
-        try:
-            m = prepare_meta(cam)
-        except KeyError as e:
-            print(f"[align] skipping {cam_id} in {base}: missing meta key {e}")
-            continue
-        try:
-            aligner = RealSenseAligner(m)
-        except Exception as exc:
-            print(f"[align] skipping {cam_id} in {base}: failed to init aligner ({exc})")
-            continue
-        try:
-            depth_files = sorted(depth_dir.glob("*.png")) if depth_dir.exists() else []
-            if depth_files and color_dir.exists():
-                out_dir = cam_dir / "depth_aligned"
-                out_dir.mkdir(parents=True, exist_ok=True)
-                for idx, path in enumerate(tqdm(depth_files, desc=f"align {cam_id}", unit="frame", leave=False), start=1):
-                    stem = path.stem
-                    color_path = color_dir / f"{stem}.png"
-                    if not color_path.exists():
-                        continue
-                    depth_raw = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
-                    if depth_raw is None or depth_raw.dtype != np.uint16:
-                        continue
-                    frame_index = _parse_frame_index(path, idx)
-                    aligned = aligner.align_depth(depth_raw, frame_index, float(frame_index))
-                    if aligned is None:
-                        continue
-                    cv2.imwrite(str(out_dir / f"{stem}.png"), aligned)
-                    if delete_original_depth:
-                        os.remove(path)
-                print(f"[align] processed PNG depth for camera {cam_id} in {base}")
-                processed_cams.append(str(cam_id))
-                continue
+        return ("", cam_id, False, "[align] pyrealsense2 not installed; cannot use official alignment")
 
-            depth_h5 = cam_dir / "depth_filtered.h5"
-            if not depth_h5.exists():
-                depth_h5 = cam_dir / "depth.h5"
-            if depth_h5.exists():
-                if h5py is None:
-                    print(f"[align] skipping {cam_id}: h5py not installed for {depth_h5}")
+    meta_path = Path(meta_path_str)
+    meta = load_meta(meta_path)
+    base = meta_path.parent
+    cam = None
+    for entry in meta.get("cameras", []):
+        if str(entry.get("id")) == cam_id:
+            cam = entry
+            break
+    if cam is None:
+        return (str(base), cam_id, False, f"[align] skip {cam_id}: not found in meta")
+
+    cam_dir = base / sanitize_camera_id(str(cam_id))
+    depth_dir = cam_dir / "depth"
+    color_dir = cam_dir / "color"
+    aligner = None
+    try:
+        m = prepare_meta(cam)
+    except KeyError as e:
+        return (str(base), cam_id, False, f"[align] skipping {cam_id} in {base}: missing meta key {e}")
+    try:
+        aligner = RealSenseAligner(m)
+    except Exception as exc:
+        return (str(base), cam_id, False, f"[align] skipping {cam_id} in {base}: failed to init aligner ({exc})")
+    try:
+        depth_files = sorted(depth_dir.glob("*.png")) if depth_dir.exists() else []
+        if depth_files and color_dir.exists():
+            out_dir = cam_dir / "depth_aligned"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            for idx, path in enumerate(tqdm(depth_files, desc=f"align {cam_id}", unit="frame", leave=False), start=1):
+                stem = path.stem
+                color_path = color_dir / f"{stem}.png"
+                if not color_path.exists():
                     continue
-                with h5py.File(depth_h5, "r") as f:
-                    if "depth" not in f:
-                        print(f"[align] skipping {cam_id}: missing /depth dataset in {depth_h5}")
-                        continue
-                    dset = f["depth"]
-                    total = dset.shape[0]
-                    if total <= 0:
-                        continue
-                    kc = m["Kc"]
-                    aligned_path = cam_dir / "depth_aligned.h5"
-                    with h5py.File(aligned_path, "w") as out_f:
-                        out_dset = out_f.create_dataset(
-                            "depth",
-                            shape=(total, int(kc["h"]), int(kc["w"])),
-                            dtype=np.uint16,
-                            chunks=(1, int(kc["h"]), int(kc["w"])),
-                        )
-                        for idx in tqdm(range(total), desc=f"align {cam_id}", unit="frame", leave=False):
-                            depth_raw = dset[idx]
-                            if depth_raw is None or depth_raw.dtype != np.uint16:
-                                continue
-                            frame_index = idx + 1
-                            aligned = aligner.align_depth(depth_raw, frame_index, float(frame_index))
-                            if aligned is None:
-                                continue
-                            out_dset[idx] = aligned
-                print(f"[align] processed HDF5 depth for camera {cam_id} in {base}")
-                processed_cams.append(str(cam_id))
-                if delete_original_depth and depth_h5.name == "depth.h5":
-                    depth_h5.unlink(missing_ok=True)
-        finally:
-            if aligner is not None:
-                aligner.close()
-    if processed_cams:
-        update_marker(
-            base,
-            "align_depth",
-            {
-                "cameras": processed_cams,
-                "workers": workers,
-                "output_dir": "depth_aligned",
-                "output_file": "depth_aligned.h5",
-            },
-        )
+                depth_raw = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+                if depth_raw is None or depth_raw.dtype != np.uint16:
+                    continue
+                frame_index = _parse_frame_index(path, idx)
+                aligned = aligner.align_depth(depth_raw, frame_index, float(frame_index))
+                if aligned is None:
+                    continue
+                cv2.imwrite(str(out_dir / f"{stem}.png"), aligned)
+                if delete_original_depth:
+                    os.remove(path)
+            return (str(base), cam_id, True, f"[align] processed PNG depth for camera {cam_id} in {base}")
+
+        depth_h5 = cam_dir / "depth_filtered.h5"
+        if not depth_h5.exists():
+            depth_h5 = cam_dir / "depth.h5"
+        if depth_h5.exists():
+            if h5py is None:
+                return (str(base), cam_id, False, f"[align] skipping {cam_id}: h5py not installed for {depth_h5}")
+            with h5py.File(depth_h5, "r") as f:
+                if "depth" not in f:
+                    return (str(base), cam_id, False, f"[align] skipping {cam_id}: missing /depth dataset in {depth_h5}")
+                dset = f["depth"]
+                total = dset.shape[0]
+                if total <= 0:
+                    return (str(base), cam_id, False, f"[align] skipping {cam_id}: no frames")
+                kc = m["Kc"]
+                aligned_path = cam_dir / "depth_aligned.h5"
+                with h5py.File(aligned_path, "w") as out_f:
+                    out_dset = out_f.create_dataset(
+                        "depth",
+                        shape=(total, int(kc["h"]), int(kc["w"])),
+                        dtype=np.uint16,
+                        chunks=(1, int(kc["h"]), int(kc["w"])),
+                    )
+                    for idx in tqdm(range(total), desc=f"align {cam_id}", unit="frame", leave=False):
+                        depth_raw = dset[idx]
+                        if depth_raw is None or depth_raw.dtype != np.uint16:
+                            continue
+                        frame_index = idx + 1
+                        aligned = aligner.align_depth(depth_raw, frame_index, float(frame_index))
+                        if aligned is None:
+                            continue
+                        out_dset[idx] = aligned
+            if delete_original_depth and depth_h5.name == "depth.h5":
+                depth_h5.unlink(missing_ok=True)
+            return (str(base), cam_id, True, f"[align] processed HDF5 depth for camera {cam_id} in {base}")
+        return (str(base), cam_id, False, f"[align] skip {cam_id}: no depth data")
+    finally:
+        if aligner is not None:
+            aligner.close()
 
 
 def main():
     parser = argparse.ArgumentParser(description="Offline depth-to-color alignment from PNGs and meta.json")
     parser.add_argument("root", help="Root directory containing captures/meta.json")
-    parser.add_argument("--workers", type=int, default=4, help="Worker threads for alignment")
+    parser.add_argument("--workers", type=int, default=4, help="Parallel workers per depth.h5")
     parser.add_argument("--find-meta", type=str, default="true",
                         choices=["true", "false"],
                         help="Search meta.json recursively (true) or only root/*/meta.json (false)")
@@ -513,8 +430,67 @@ def main():
     if not metas:
         print("No meta.json found")
         return
+    tasks: List[Tuple[str, str]] = []
     for m in metas:
-        process_capture(m, max(1, args.workers), delete_original_depth)
+        base = m.parent
+        if should_skip_step(base, "align_depth"):
+            print(f"[align] skip {base}, already aligned depth")
+            continue
+        meta = load_meta(m)
+        cam_entries = {
+            c["id"]: c for c in meta.get("cameras", []) if is_realsense_id(str(c.get("id", "")))
+        }
+        if not cam_entries:
+            continue
+        for cam_id in cam_entries.keys():
+            cam_dir = base / sanitize_camera_id(str(cam_id))
+            depth_h5 = cam_dir / "depth_filtered.h5"
+            if not depth_h5.exists():
+                depth_h5 = cam_dir / "depth.h5"
+            depth_dir = cam_dir / "depth"
+            color_dir = cam_dir / "color"
+            if depth_h5.exists() or (depth_dir.exists() and color_dir.exists()):
+                tasks.append((str(m), str(cam_id)))
+
+    if not tasks:
+        return
+
+    workers = max(1, args.workers)
+    results: Dict[str, List[str]] = {}
+    if workers > 1:
+        ctx = get_context("spawn")
+        with ProcessPoolExecutor(max_workers=workers, mp_context=ctx) as executor:
+            future_map = {
+                executor.submit(_process_camera_task, meta_path, cam_id, delete_original_depth): (meta_path, cam_id)
+                for meta_path, cam_id in tasks
+            }
+            for future in as_completed(future_map):
+                base, cam_id, ok, msg = future.result()
+                if msg:
+                    print(msg)
+                if ok and base:
+                    results.setdefault(base, []).append(cam_id)
+    else:
+        for meta_path, cam_id in tasks:
+            base, cam_id, ok, msg = _process_camera_task(meta_path, cam_id, delete_original_depth)
+            if msg:
+                print(msg)
+            if ok and base:
+                results.setdefault(base, []).append(cam_id)
+
+    for base_str, cams in results.items():
+        if not cams:
+            continue
+        update_marker(
+            Path(base_str),
+            "align_depth",
+            {
+                "cameras": cams,
+                "workers": workers,
+                "output_dir": "depth_aligned",
+                "output_file": "depth_aligned.h5",
+            },
+        )
 
 
 def update_marker(capture_root: Path, step: str, info: Dict) -> None:
