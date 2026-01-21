@@ -1,0 +1,115 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_montessori_cylinders_01",
+    "name": "Knobbed cylinder manipulation setup",
+    "name_cn": "插座圆柱体操作场景",
+    "description": "A wooden block with five cylinders of different sizes arranged in a row on a table",
+    "objects": [
+      {
+        "object_id": "obj_block",
+        "name": "cylinder_block_base",
+        "category": "montessori_material",
+        "state": {
+          "placement": "on_table",
+          "relative": "center"
+        }
+      },
+      {
+        "object_id": "obj_cyl_1",
+        "name": "cylinder_smallest",
+        "category": "cylinder",
+        "state": {
+          "placement": "in_block",
+          "relative": "center_hole"
+        }
+      },
+      {
+        "object_id": "obj_cyl_2",
+        "name": "cylinder_largest",
+        "category": "cylinder",
+        "state": {
+          "placement": "in_block",
+          "relative": "second_from_left"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_cylinder_discrimination_task",
+    "name": "Work with knobbed cylinders",
+    "name_cn": "插座圆柱体辨别与放置",
+    "description": "Remove all cylinders from the block using a pincer grip and then reinsert them into their matching holes",
+    "spoken_prompt": "Task: We will practice working with the knobbed cylinders. The goal is to remove all cylinders using a pincer grip and then match them back to their correct holes.",
+    "spoken_prompt_cn": "任务描述：我们要进行插座圆柱体操作练习。目标是用三指捏的方法取出所有圆柱体，然后将它们放回匹配的孔位中。",
+    "subtasks": [
+      {
+        "id": "st_cylinder_sorting_flow",
+        "description": "Execute the removal and matching sequence",
+        "spoken_prompt": "Subtask: Please remove the cylinders one by one and place them in front of the block before reinserting them.",
+        "spoken_prompt_cn": "子任务描述：请逐个取出圆柱体并放在木块前，然后再依次将它们放回。",
+        "involved_objects": [
+          {
+            "object_id": "obj_block",
+            "name": "cylinder_block_base",
+            "role": "base_station"
+          },
+          {
+            "object_id": "obj_cyl_all",
+            "name": "all_cylinders",
+            "role": "manipulated"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Remove cylinders using three-finger grip",
+            "spoken_prompt": "Step one: use your thumb, index, and middle fingers to lift each cylinder by the knob.",
+            "spoken_prompt_cn": "第一步：使用拇指、食指和中指捏住小捏手，将每个圆柱体垂直向上取出。",
+            "involved_objects": [
+              {
+                "object_id": "obj_cyl_all",
+                "name": "cylinders",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Visual discrimination and matching",
+            "spoken_prompt": "Step two: find the matching hole for each cylinder by observing its diameter and depth.",
+            "spoken_prompt_cn": "第二步：通过观察直径和深度，为每个圆柱体找到匹配的孔位。",
+            "involved_objects": [
+              {
+                "object_id": "obj_cyl_all",
+                "name": "cylinders",
+                "role": "manipulated"
+              },
+              {
+                "object_id": "obj_block",
+                "name": "cylinder_block_base",
+                "role": "target_container"
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "description": "Insert cylinders back into the block",
+            "spoken_prompt": "Step three: gently place each cylinder back into its corresponding hole.",
+            "spoken_prompt_cn": "第三步：轻轻地将每个圆柱体放回对应的孔位中。",
+            "involved_objects": [
+              {
+                "object_id": "obj_cyl_all",
+                "name": "cylinders",
+                "role": "manipulated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Ensure a precise pincer grip is used; the cylinders must be placed silently and accurately into the holes without forcing them."
+  }
+}

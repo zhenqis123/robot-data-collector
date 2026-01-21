@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_lightbulb_cycle_01",
+    "name": "Light bulb replacement setup",
+    "name_cn": "更换灯泡场景",
+    "description": "A table with a desk lamp or a standalone bulb socket and a compatible light bulb",
+    "objects": [
+      {
+        "object_id": "obj_socket",
+        "name": "bulb_socket",
+        "category": "electronics",
+        "state": {
+          "placement": "on_table",
+          "relative": "center"
+        }
+      },
+      {
+        "object_id": "obj_bulb",
+        "name": "light_bulb",
+        "category": "electronics",
+        "state": {
+          "placement": "on_table",
+          "relative": "next to socket",
+          "condition": "uninstalled"
+        }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_bulb_screw_unscrew",
+    "name": "Install and remove light bulb",
+    "name_cn": "安装与卸下灯泡",
+    "description": "First screw the light bulb into the socket, then unscrew it to remove it",
+    "spoken_prompt": "Task: We will practice replacing a light bulb. First, screw the bulb into the socket, and then unscrew it.",
+    "spoken_prompt_cn": "任务描述：我们要练习更换灯泡。首先将灯泡拧进灯座，然后再把它拧出来。",
+    "subtasks": [
+      {
+        "id": "st_bulb_manipulation_flow",
+        "description": "Execute the installation and removal sequence",
+        "spoken_prompt": "Subtask: Please follow the steps to install and then remove the bulb.",
+        "spoken_prompt_cn": "子任务描述：请按照步骤安装并拆卸灯泡。",
+        "involved_objects": [
+          {
+            "object_id": "obj_bulb",
+            "name": "light_bulb",
+            "role": "manipulated"
+          },
+          {
+            "object_id": "obj_socket",
+            "name": "bulb_socket",
+            "role": "target_container"
+          }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Install the light bulb by rotating it clockwise into the socket",
+            "spoken_prompt": "Step one: start installing the light bulb.",
+            "spoken_prompt_cn": "第一步：开始安装灯泡。",
+            "involved_objects": [
+              {
+                "object_id": "obj_bulb",
+                "name": "light_bulb",
+                "role": "manipulated"
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "description": "Remove the light bulb by rotating it counter-clockwise",
+            "spoken_prompt": "Step two: start removing the light bulb.",
+            "spoken_prompt_cn": "第二步：开始卸下灯泡。",
+            "involved_objects": [
+              {
+                "object_id": "obj_bulb",
+                "name": "light_bulb",
+                "role": "manipulated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Ensure the bulb is correctly threaded before applying force; handle the glass part gently to prevent breakage."
+  }
+}

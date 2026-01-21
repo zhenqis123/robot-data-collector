@@ -1,0 +1,63 @@
+{
+  "schema_version": "1.0",
+  "scene": {
+    "scene_id": "table_tray_prep_01",
+    "name": "Dining tray preparation setup",
+    "name_cn": "准备堂食托盘场景",
+    "description": "A desk with an empty serving tray and various dining items like a bowl, a cup, and a set of utensils",
+    "objects": [
+      {
+        "object_id": "obj_tray",
+        "name": "dining_tray",
+        "category": "container",
+        "state": { "placement": "on_table", "relative": "center" }
+      },
+      {
+        "object_id": "obj_food_items",
+        "name": "bowls_and_cups",
+        "category": "food_containers",
+        "state": { "placement": "on_table", "relative": "next to tray" }
+      },
+      {
+        "object_id": "obj_cutlery",
+        "name": "utensils",
+        "category": "stationery",
+        "state": { "placement": "on_table", "relative": "near tray" }
+      }
+    ]
+  },
+  "task": {
+    "id": "t_prepare_dining_tray",
+    "name": "Prepare dining tray",
+    "name_cn": "准备堂食托盘",
+    "description": "Arrange all dining items neatly onto the tray for serving",
+    "spoken_prompt": "Task: We will prepare the dining tray. Please place the bowl, cup, and utensils onto the tray.",
+    "spoken_prompt_cn": "任务描述：我们要准备堂食托盘。请将碗、杯子和餐具摆放到托盘内。",
+    "subtasks": [
+      {
+        "id": "st_tray_loading",
+        "description": "Execute the tray loading sequence",
+        "spoken_prompt": "Subtask: Start placing items on the tray.",
+        "spoken_prompt_cn": "子任务描述：开始向托盘摆放物品。",
+        "involved_objects": [
+          { "object_id": "obj_tray", "name": "dining_tray", "role": "target_container" },
+          { "object_id": "obj_food_items", "name": "dining_wares", "role": "manipulated" }
+        ],
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Start preparing the dining tray by placing items one by one",
+            "spoken_prompt": "Step one: start preparing the tray.",
+            "spoken_prompt_cn": "第一步：开始准备托盘。",
+            "involved_objects": [
+              { "object_id": "obj_tray", "name": "dining_tray", "role": "target_container" }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "constraints": {
+    "notes": "Ensure items are balanced to prevent the tray from tipping when lifted; place liquids carefully to avoid spills."
+  }
+}

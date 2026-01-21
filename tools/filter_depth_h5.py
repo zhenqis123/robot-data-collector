@@ -16,6 +16,8 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from multiprocessing import get_context
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
 from tqdm import tqdm
@@ -304,136 +306,110 @@ def update_marker(capture_root: Path, step: str, info: Dict) -> None:
     print(f"[depth-filter] updated marker {marker_path}")
 
 
-def process_capture(meta_path: Path, args: argparse.Namespace) -> None:
+def _process_camera_task(meta_path_str: str, cam_id: str, args_dict: Dict) -> Tuple[str, str, bool, str]:
     if h5py is None:
-        print("[depth-filter] h5py not installed; cannot filter depth.h5")
-        return
+        return ("", cam_id, False, "[depth-filter] h5py not installed; cannot filter depth.h5")
     if rs is None:
-        print("[depth-filter] pyrealsense2 not installed; cannot filter depth.h5")
-        return
+        return ("", cam_id, False, "[depth-filter] pyrealsense2 not installed; cannot filter depth.h5")
+
+    def _arg(name: str, default):
+        return args_dict.get(name, default)
+
+    meta_path = Path(meta_path_str)
     meta = load_meta(meta_path)
     base = meta_path.parent
-    cam_entries = {
-        c["id"]: c for c in meta.get("cameras", []) if is_realsense_id(str(c.get("id", "")))
-    }
-    if not cam_entries:
-        return
-    if args.decimation_magnitude > 0 and not args.allow_decimation:
-        print("[depth-filter] decimation changes resolution; pass --allow-decimation to proceed")
-        return
-    if should_skip_step(base, "filter_depth"):
-        print(f"[depth-filter] skip {base}, already filtered")
-        return
-    processed = []
-    for cam_id, cam in cam_entries.items():
-        cam_dir = base / sanitize_camera_id(str(cam_id))
-        depth_h5 = cam_dir / "depth.h5"
-        if not depth_h5.exists():
-            continue
-        try:
-            m = prepare_meta(cam)
-        except KeyError as e:
-            print(f"[depth-filter] skipping {cam_id} in {base}: missing meta key {e}")
-            continue
-        out_path = cam_dir / args.output_name
-        if out_path.exists() and not args.overwrite:
-            print(f"[depth-filter] skip {cam_id}, exists: {out_path}")
-            processed.append(str(cam_id))
-            continue
+    cam = None
+    for entry in meta.get("cameras", []):
+        if str(entry.get("id")) == cam_id:
+            cam = entry
+            break
+    if cam is None:
+        return (str(base), cam_id, False, f"[depth-filter] skip {cam_id}: not found in meta")
 
-        pipeline = None
-        try:
-            pipeline = DepthFilterPipeline(
-                m,
-                use_threshold=not args.no_threshold,
-                use_disparity=not args.no_disparity,
-                use_spatial=not args.no_spatial,
-                use_temporal=not args.no_temporal,
-                use_hole_filling=not args.no_hole_filling and args.hole_filling >= 0,
-                decimation_magnitude=args.decimation_magnitude,
-                min_distance=args.min_distance,
-                max_distance=args.max_distance,
-                spatial_alpha=args.spatial_alpha,
-                spatial_delta=args.spatial_delta,
-                spatial_magnitude=args.spatial_magnitude,
-                temporal_alpha=args.temporal_alpha,
-                temporal_delta=args.temporal_delta,
-                hole_filling=args.hole_filling,
-            )
-        except Exception as exc:
-            print(f"[depth-filter] skipping {cam_id} in {base}: init failed ({exc})")
-            continue
+    cam_dir = base / sanitize_camera_id(str(cam_id))
+    depth_h5 = cam_dir / "depth.h5"
+    if not depth_h5.exists():
+        return (str(base), cam_id, False, f"[depth-filter] skip {cam_id}: missing {depth_h5}")
 
-        try:
-            with h5py.File(depth_h5, "r") as f:
-                if "depth" not in f:
-                    print(f"[depth-filter] skipping {cam_id}: missing /depth dataset in {depth_h5}")
-                    continue
-                dset = f["depth"]
-                total = int(dset.shape[0])
-                if total <= 0:
-                    continue
-                timestamps = None
-                if "depth_timestamps" in f:
-                    timestamps = f["depth_timestamps"][:]
-                first_raw = dset[0]
-                ts_ms = float(timestamps[0][0]) if timestamps is not None and timestamps.shape[0] > 0 else 0.0
-                first_filtered = pipeline.process(first_raw, 1, ts_ms)
-                if first_filtered is None:
-                    print(f"[depth-filter] skipping {cam_id}: failed to filter first frame")
-                    continue
-                out_h, out_w = first_filtered.shape[:2]
-                if (out_h, out_w) != tuple(dset.shape[1:]):
-                    print(f"[depth-filter] skipping {cam_id}: filtered size {out_w}x{out_h} != input {dset.shape[2]}x{dset.shape[1]}")
-                    continue
-                with h5py.File(out_path, "w") as out_f:
-                    out_dset = out_f.create_dataset(
-                        "depth",
-                        shape=(total, out_h, out_w),
-                        dtype=np.uint16,
-                        chunks=(1, out_h, out_w),
-                    )
-                    if timestamps is not None:
-                        out_f.create_dataset("depth_timestamps", data=timestamps, dtype=timestamps.dtype)
-                    out_dset[0] = first_filtered
-                    for idx in tqdm(range(1, total), desc=f"filter {cam_id}", unit="frame", leave=False):
-                        depth_raw = dset[idx]
-                        ts_ms = float(idx)
-                        if timestamps is not None and timestamps.shape[0] > idx:
-                            ts_ms = float(timestamps[idx][0])
-                        filtered = pipeline.process(depth_raw, idx + 1, ts_ms)
-                        if filtered is None:
-                            continue
-                        out_dset[idx] = filtered
-            print(f"[depth-filter] wrote {out_path}")
-            processed.append(str(cam_id))
-        finally:
-            if pipeline is not None:
-                pipeline.close()
+    try:
+        m = prepare_meta(cam)
+    except KeyError as e:
+        return (str(base), cam_id, False, f"[depth-filter] skipping {cam_id} in {base}: missing meta key {e}")
 
-    if processed:
-        update_marker(
-            base,
-            "filter_depth",
-            {
-                "cameras": processed,
-                "output_file": args.output_name,
-                "min_distance": args.min_distance,
-                "max_distance": args.max_distance,
-                "decimation_magnitude": args.decimation_magnitude,
-                "spatial_alpha": args.spatial_alpha,
-                "spatial_delta": args.spatial_delta,
-                "spatial_magnitude": args.spatial_magnitude,
-                "temporal_alpha": args.temporal_alpha,
-                "temporal_delta": args.temporal_delta,
-                "hole_filling": args.hole_filling,
-                "no_threshold": args.no_threshold,
-                "no_disparity": args.no_disparity,
-                "no_spatial": args.no_spatial,
-                "no_temporal": args.no_temporal,
-                "no_hole_filling": args.no_hole_filling,
-            },
+    out_path = cam_dir / _arg("output_name", "depth_filtered.h5")
+    overwrite = bool(_arg("overwrite", False))
+    if out_path.exists() and not overwrite:
+        return (str(base), cam_id, True, f"[depth-filter] skip {cam_id}, exists: {out_path}")
+
+    pipeline = None
+    try:
+        pipeline = DepthFilterPipeline(
+            m,
+            use_threshold=not bool(_arg("no_threshold", False)),
+            use_disparity=not bool(_arg("no_disparity", False)),
+            use_spatial=not bool(_arg("no_spatial", False)),
+            use_temporal=not bool(_arg("no_temporal", False)),
+            use_hole_filling=not bool(_arg("no_hole_filling", False)) and int(_arg("hole_filling", -1)) >= 0,
+            decimation_magnitude=float(_arg("decimation_magnitude", -1.0)),
+            min_distance=float(_arg("min_distance", -1.0)),
+            max_distance=float(_arg("max_distance", -1.0)),
+            spatial_alpha=float(_arg("spatial_alpha", -1.0)),
+            spatial_delta=float(_arg("spatial_delta", -1.0)),
+            spatial_magnitude=float(_arg("spatial_magnitude", -1.0)),
+            temporal_alpha=float(_arg("temporal_alpha", -1.0)),
+            temporal_delta=float(_arg("temporal_delta", -1.0)),
+            hole_filling=int(_arg("hole_filling", -1)),
         )
+    except Exception as exc:
+        return (str(base), cam_id, False, f"[depth-filter] skipping {cam_id} in {base}: init failed ({exc})")
+
+    try:
+        with h5py.File(depth_h5, "r") as f:
+            if "depth" not in f:
+                return (str(base), cam_id, False, f"[depth-filter] skipping {cam_id}: missing /depth dataset in {depth_h5}")
+            dset = f["depth"]
+            total = int(dset.shape[0])
+            if total <= 0:
+                return (str(base), cam_id, False, f"[depth-filter] skipping {cam_id}: no frames")
+            timestamps = None
+            if "depth_timestamps" in f:
+                timestamps = f["depth_timestamps"][:]
+            first_raw = dset[0]
+            ts_ms = float(timestamps[0][0]) if timestamps is not None and timestamps.shape[0] > 0 else 0.0
+            first_filtered = pipeline.process(first_raw, 1, ts_ms)
+            if first_filtered is None:
+                return (str(base), cam_id, False, f"[depth-filter] skipping {cam_id}: failed to filter first frame")
+            out_h, out_w = first_filtered.shape[:2]
+            if (out_h, out_w) != tuple(dset.shape[1:]):
+                return (
+                    str(base),
+                    cam_id,
+                    False,
+                    f"[depth-filter] skipping {cam_id}: filtered size {out_w}x{out_h} != input {dset.shape[2]}x{dset.shape[1]}",
+                )
+            with h5py.File(out_path, "w") as out_f:
+                out_dset = out_f.create_dataset(
+                    "depth",
+                    shape=(total, out_h, out_w),
+                    dtype=np.uint16,
+                    chunks=(1, out_h, out_w),
+                )
+                if timestamps is not None:
+                    out_f.create_dataset("depth_timestamps", data=timestamps, dtype=timestamps.dtype)
+                out_dset[0] = first_filtered
+                for idx in tqdm(range(1, total), desc=f"filter {cam_id}", unit="frame", leave=False):
+                    depth_raw = dset[idx]
+                    ts_ms = float(idx)
+                    if timestamps is not None and timestamps.shape[0] > idx:
+                        ts_ms = float(timestamps[idx][0])
+                    filtered = pipeline.process(depth_raw, idx + 1, ts_ms)
+                    if filtered is None:
+                        continue
+                    out_dset[idx] = filtered
+        return (str(base), cam_id, True, f"[depth-filter] wrote {out_path}")
+    finally:
+        if pipeline is not None:
+            pipeline.close()
 
 
 def main() -> int:
@@ -444,6 +420,7 @@ def main() -> int:
                         help="Search meta.json recursively (true) or only root/*/meta.json (false)")
     parser.add_argument("--output-name", default="depth_filtered.h5", help="Output H5 name per camera")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing output files")
+    parser.add_argument("--workers", type=int, default=1, help="Parallel workers per depth.h5")
 
     parser.add_argument("--min-distance", type=float, default=-1.0, help="Threshold min distance (m)")
     parser.add_argument("--max-distance", type=float, default=-1.0, help="Threshold max distance (m)")
@@ -470,8 +447,79 @@ def main() -> int:
     if not metas:
         print("No meta.json found")
         return 1
+    results: Dict[str, List[str]] = {}
+    tasks: List[Tuple[str, str]] = []
     for meta_path in metas:
-        process_capture(meta_path, args)
+        base = meta_path.parent
+        if args.decimation_magnitude > 0 and not args.allow_decimation:
+            print("[depth-filter] decimation changes resolution; pass --allow-decimation to proceed")
+            continue
+        if should_skip_step(base, "filter_depth"):
+            print(f"[depth-filter] skip {base}, already filtered")
+            continue
+        meta = load_meta(meta_path)
+        cam_entries = {
+            c["id"]: c for c in meta.get("cameras", []) if is_realsense_id(str(c.get("id", "")))
+        }
+        if not cam_entries:
+            continue
+        for cam_id in cam_entries.keys():
+            cam_dir = base / sanitize_camera_id(str(cam_id))
+            depth_h5 = cam_dir / "depth.h5"
+            if depth_h5.exists():
+                tasks.append((str(meta_path), str(cam_id)))
+
+    if not tasks:
+        return 0
+
+    args_dict = vars(args)
+    workers = max(1, int(args.workers))
+    if workers > 1:
+        ctx = get_context("spawn")
+        with ProcessPoolExecutor(max_workers=workers, mp_context=ctx) as executor:
+            future_map = {
+                executor.submit(_process_camera_task, meta_path, cam_id, args_dict): (meta_path, cam_id)
+                for meta_path, cam_id in tasks
+            }
+            for future in as_completed(future_map):
+                base, cam_id, ok, msg = future.result()
+                if msg:
+                    print(msg)
+                if ok and base:
+                    results.setdefault(base, []).append(cam_id)
+    else:
+        for meta_path, cam_id in tasks:
+            base, cam_id, ok, msg = _process_camera_task(meta_path, cam_id, args_dict)
+            if msg:
+                print(msg)
+            if ok and base:
+                results.setdefault(base, []).append(cam_id)
+
+    for base_str, cams in results.items():
+        if not cams:
+            continue
+        update_marker(
+            Path(base_str),
+            "filter_depth",
+            {
+                "cameras": cams,
+                "output_file": args.output_name,
+                "min_distance": args.min_distance,
+                "max_distance": args.max_distance,
+                "decimation_magnitude": args.decimation_magnitude,
+                "spatial_alpha": args.spatial_alpha,
+                "spatial_delta": args.spatial_delta,
+                "spatial_magnitude": args.spatial_magnitude,
+                "temporal_alpha": args.temporal_alpha,
+                "temporal_delta": args.temporal_delta,
+                "hole_filling": args.hole_filling,
+                "no_threshold": args.no_threshold,
+                "no_disparity": args.no_disparity,
+                "no_spatial": args.no_spatial,
+                "no_temporal": args.no_temporal,
+                "no_hole_filling": args.no_hole_filling,
+            },
+        )
     return 0
 
 
