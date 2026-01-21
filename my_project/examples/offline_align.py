@@ -139,6 +139,7 @@ def main():
     if not root.exists():
         raise SystemExit(f"Root path not found: {root}")
     metas = find_meta_files(root)
+    print(metas)
     if not metas:
         print("No meta.json found")
         return

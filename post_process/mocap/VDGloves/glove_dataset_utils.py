@@ -335,7 +335,7 @@ class GloveCSVProcessor:
                 break
 
 if __name__ == "__main__":
-    default_csv = "/home/zc/HandMotion/temp_new/temp/robot-data-collector/my_project/resources/logs/captures/2026-01-11/sess_20260111_152148/glove_data.csv"
+    default_csv = "/home/zc/HandMotion/robot-data-collector/my_project/resources/logs/captures/2026-01-11/sess_20260111_152148/glove_data.csv"
     
     # 支持命令行参数
     csv_file = sys.argv[1] if len(sys.argv) > 1 else default_csv

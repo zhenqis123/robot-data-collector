@@ -17,6 +17,7 @@ Usage:
 """
 
 import argparse
+from ast import arg
 import json
 import logging
 import math
@@ -342,7 +343,7 @@ def main():
     refine_poses(raw_poses_path, refined_poses_path, fixed_list, moving_list)
     
     logger.info(f"=== Step 5: Reconstructing Scene (Target: {args.target_view}) ===")
-    final_output_dir = args.capture_root / args.output_dir
+    final_output_dir = args.output_dir
     
     reconstruct_cmd = [
         args.python_bin, str(tool_reconstruct), str(args.capture_root),

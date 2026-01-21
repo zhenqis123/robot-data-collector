@@ -73,6 +73,7 @@ my_project/tac_glove_py/__pycache__
 post_process/realsense_setting
 post_process/UV_conversion/assets
 __pycache__/
+*.pyc
 
 # 1. 忽略 third_party 文件夹下的所有内容
 third_party/*

@@ -542,42 +542,5 @@ def main():
         
     print(f"Done. Saved to {args.output_dir}")
     
-    # 2. Load Poses
-    print(f"Loading poses from {args.poses}...")
-    poses = load_pose_entries(args.poses)
-    if not poses:
-        print("Error: No valid poses found")
-        sys.exit(1)
-
-    # 3. Load aligned frames CSV
-    csv_path = root / "frames_aligned.csv"
-    if not csv_path.exists():
-        print(f"Error: {csv_path} not found. Run align_timestamps.py first.")
-        sys.exit(1)
-        
-    rows, cam_ids = read_frames_aligned(csv_path)
-    print(f"Found {len(rows)} aligned frames, cameras: {cam_ids}")
-    
-    # 4. Process Loop
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    
-    count = 0
-    for i, row in tqdm(enumerate(rows), total=len(rows), desc="Reconstructing"):
-        if i < args.start:
-            continue
-        if (i - args.start) % args.stride != 0:
-            continue
-        if count >= args.count:
-            break
-            
-        # We assume frame_idx matches i (csv row index)
-        # Verify this assumption against poses keys if possible?
-        # poses are keyed by stored frame_index. 
-        # Usually align_timestamps produces 0-based index.
-        process_frame(row, cam_ids, root, intrinsics, poses, args.target_camera, args.output_dir, i)
-        count += 1
-        
-    print(f"Done. Saved to {args.output_dir}")
-
 if __name__ == "__main__":
     main()

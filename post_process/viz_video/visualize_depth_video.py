@@ -84,6 +84,6 @@ if __name__ == "__main__":
         file_path = sys.argv[1]
     else:
         # Default path based on your workspace context
-        file_path = "/home/zc/HandMotion/temp_new/temp/robot-data-collector/my_project/resources/logs/captures/2026-01-15/sess_20260115_210650/RealSense_213222079798/depth.h5"
+        file_path = "/home/zc/HandMotion/robot-data-collector/my_project/resources/logs/captures/2026-01-15/sess_20260115_210650/RealSense_213222079798/depth.h5"
         
     visualize_depth_h5(file_path)

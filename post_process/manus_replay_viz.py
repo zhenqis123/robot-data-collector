@@ -162,7 +162,7 @@ class ManusReplayer:
 
 def main():
     parser = argparse.ArgumentParser(description="Replay Manus Glove data from log folder")
-    parser.add_argument("log_dir", default="/home/zc/HandMotion/temp_new/temp/robot-data-collector/my_project/resources/logs/captures/2026-01-14/sess_20260114_163528", help="Path to the capture session directory (containing manus_data.csv)")
+    parser.add_argument("log_dir", default="/home/zc/HandMotion/robot-data-collector/my_project/resources/logs/captures/2026-01-14/sess_20260114_163528", help="Path to the capture session directory (containing manus_data.csv)")
     parser.add_argument("--fps", type=float, default=30.0, help="Playback FPS")
     
     args = parser.parse_args()

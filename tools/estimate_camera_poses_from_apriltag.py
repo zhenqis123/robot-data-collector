@@ -306,12 +306,19 @@ def resolve_aligned_output_name(capture_root: Path, cam_ids: List[str]) -> str:
     output_name = read_encode_output_name(capture_root)
     if output_name:
         return output_name
-    fallback = DEFAULT_ALIGNED_NAME
-    for cid in cam_ids:
-        cam_dir = capture_root / sanitize_camera_id(str(cid))
-        if not (cam_dir / fallback).exists():
-            return ""
-    return fallback
+    
+    # Check for mp4 then mkv
+    for name in [DEFAULT_ALIGNED_NAME, "color_aligned.mkv"]:
+        missing = False
+        for cid in cam_ids:
+            cam_dir = capture_root / sanitize_camera_id(str(cid))
+            if not (cam_dir / name).exists():
+                missing = True
+                break
+        if not missing:
+            return name
+            
+    return ""
 
 
 def count_csv_rows(csv_path: Path) -> int:
