@@ -1,0 +1,15 @@
+{
+  "color_min": null,
+  "color_max": null,
+  "remove_outliers": false,
+  "sor_nb_neighbors": 20,
+  "sor_std_ratio": 2.0,
+  "radius_outlier": false,
+  "radius_nb": 16,
+  "radius_radius": 0.05,
+  "cluster_eps": 0.02,
+  "cluster_min_points": 50,
+  "min_cluster_size": 200,
+  "keep_largest_cluster": false,
+  "voxel_size": 0.0
+}

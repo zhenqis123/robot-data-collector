@@ -12,6 +12,7 @@ Usage:
     (Optional: --no-backup to delete originals immediately)
 """
 
+from ast import arg
 import os
 import sys
 import argparse
@@ -21,6 +22,7 @@ import shutil
 import multiprocessing
 import numpy as np
 import cv2
+import time
 from pathlib import Path
 from typing import List, Set, Optional
 from tqdm import tqdm
@@ -34,7 +36,7 @@ except ImportError:
 # Configuration
 EXT_VIDEO = {'.mkv', '.mp4', '.avi'}
 
-def detect_corrupt_frames(file_path: Path) -> Set[int]:
+def detect_corrupt_frames(file_path: Path, total_frames: Optional[int] = None, log_prefix: str = "") -> Set[int]:
     """
     Scans video using ffmpeg to find specific decoding errors.
     Returns a set of corrupt frame indices.
@@ -46,6 +48,9 @@ def detect_corrupt_frames(file_path: Path) -> Set[int]:
     # Regex to capture current frame processing
     frame_pattern = re.compile(r"frame=\s*(\d+)")
     
+    start_time = time.time()
+    last_log_time = start_time
+
     try:
         process = subprocess.Popen(
             command, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace'
@@ -70,6 +75,16 @@ def detect_corrupt_frames(file_path: Path) -> Set[int]:
                     match_frame = frame_pattern.search(line)
                     if match_frame:
                         current_frame = int(match_frame.group(1))
+                        # Log progress
+                        now = time.time()
+                        if now - last_log_time > 2.0: # Log every 2 seconds
+                            if total_frames and total_frames > 0:
+                                percent = (current_frame / total_frames) * 100
+                                print(f"{log_prefix}Scanning: {percent:.1f}% (Frame {current_frame}/{total_frames})")
+                            else:
+                                print(f"{log_prefix}Scanning: Frame {current_frame}")
+                            last_log_time = now
+
                     
                     # Detect Error keywords
                     lower_line = line.lower()
@@ -88,6 +103,67 @@ def detect_corrupt_frames(file_path: Path) -> Set[int]:
 
     return error_frames
 
+
+class FFmpegWriter:
+    """
+    Writes video frames to an ffmpeg subprocess for faster encoding.
+    """
+    def __init__(self, filename, width, height, fps, crf=23, preset="ultrafast", output_format=None):
+        self.filename = filename
+        self.width = width
+        self.height = height
+        self.fps = fps
+        self.process = None
+        
+        # Build command
+        # Input: raw video from pipe (bgr24 from opencv)
+        # Output: h264 mp4
+        self.cmd = [
+            "ffmpeg", "-y",
+            "-f", "rawvideo",
+            "-vcodec", "rawvideo",
+            "-s", f"{width}x{height}",
+            "-pix_fmt", "bgr24",
+            "-r", str(fps),
+            "-i", "-",  # Input from stdin
+            "-c:v", "libx264",
+            "-preset", preset,
+            "-crf", str(crf),
+            "-pix_fmt", "yuv420p", # Standard for compatibility
+        ]
+        
+        if output_format:
+            self.cmd.extend(["-f", output_format])
+            
+        self.cmd.append(str(filename))
+
+    def start(self):
+        # Hide output unless error
+        self.process = subprocess.Popen(
+            self.cmd, 
+            stdin=subprocess.PIPE, 
+            stdout=subprocess.DEVNULL, 
+            stderr=subprocess.PIPE
+        )
+
+    def write(self, frame):
+        if self.process is None:
+            self.start()
+        try:
+            self.process.stdin.write(frame.tobytes())
+        except BrokenPipeError:
+            print(f"Error: FFmpeg pipe broken for {self.filename}")
+            # Try to read stderr
+            _, stderr = self.process.communicate()
+            if stderr:
+                print(f"FFmpeg stderr: {stderr.decode('utf-8', errors='replace')}")
+
+    def release(self):
+        if self.process:
+            self.process.stdin.close()
+            self.process.wait()
+            self.process = None
+
 def process_camera_worker(args):
     """
     Worker to handle a single camera folder.
@@ -95,7 +171,9 @@ def process_camera_worker(args):
     2. Reads original -> Writes Repaired (Video & Depth).
     3. Handles Backups.
     """
-    cam_dir, backup_dir, backup_enabled = args
+    cam_dir, backup_dir, backup_enabled, fast_mode, process_depth = args
+    cam_name = cam_dir.name
+    log_prefix = f"[{cam_name}] "
     
     # Identify Video File
     video_file = None
@@ -111,14 +189,29 @@ def process_camera_worker(args):
     depth_file = cam_dir / "depth.h5"
     has_depth = depth_file.exists()
     
+    # Get total frames using OpenCV
+    total_frames = 0
+    try:
+        tmp_cap = cv2.VideoCapture(str(video_file))
+        if tmp_cap.isOpened():
+            total_frames = int(tmp_cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        tmp_cap.release()
+    except:
+        pass
+
     # 1. Detect Corruption
-    # We scan the original file first
-    bad_indices = detect_corrupt_frames(video_file)
-    
-    if not bad_indices:
-        return # Nothing to do for this camera
-        
-    print(f"  [Repairing] {cam_dir.name}: Found {len(bad_indices)} corrupt frames.")
+    bad_indices = set()
+    if not fast_mode:
+        # Full scan
+        bad_indices = detect_corrupt_frames(video_file, total_frames, log_prefix)
+    else:
+        print(f"{log_prefix}Fast mode: Skipping ffmpeg scan. Will repair only unreadable frames.")
+
+    if not fast_mode and not bad_indices:
+        return # Nothing to do
+
+    if bad_indices:
+        print(f"{log_prefix}Found {len(bad_indices)} corrupt frames via scan.")
 
     # Prepare Backup Directory
     cam_backup = backup_dir / cam_dir.name
@@ -136,21 +229,42 @@ def process_camera_worker(args):
         src_video = video_file.with_suffix(video_file.suffix + ".orig")
         if not src_video.exists():
             video_file.rename(src_video)
+    
+    # Check if src_video exists now
+    if not src_video.exists():
+        print(f"{log_prefix}Error: Source video not found: {src_video}")
+        return
 
-    tmp_video = video_file.with_suffix(".mp4.tmp")
+    # Use original extension for tmp file to imply format, but still specify explicitly for safety with .tmp
+    input_ext = video_file.suffix.lower()
+    tmp_video = video_file.with_suffix(input_ext + ".tmp")
+    
+    # Determine format for ffmpeg
+    ffmpeg_fmt = "mp4" # Default
+    if input_ext == ".mkv":
+        ffmpeg_fmt = "matroska"
+    elif input_ext == ".avi":
+        ffmpeg_fmt = "avi"
+    elif input_ext == ".mp4":
+        ffmpeg_fmt = "mp4"
     
     cap = cv2.VideoCapture(str(src_video))
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if total_frames == 0:
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out_vid = cv2.VideoWriter(str(tmp_video), fourcc, fps, (width, height))
+    # Use FFmpegWriter instead of cv2.VideoWriter for speed (ultrafast preset)
+    out_vid = FFmpegWriter(tmp_video, width, height, fps, preset="ultrafast", output_format=ffmpeg_fmt)
+    out_vid.start()
     
     last_valid_frame = np.zeros((height, width, 3), dtype=np.uint8) # Default black
     
     # Processing Loop
+    last_log_time = time.time()
+    repaired_count = 0
+    
     for i in range(total_frames):
         ret, frame = cap.read()
         
@@ -163,12 +277,34 @@ def process_camera_worker(args):
         
         if is_bad:
             out_vid.write(last_valid_frame)
+            repaired_count += 1
+            if fast_mode and i not in bad_indices:
+                bad_indices.add(i) # Add to set for depth repair later
         else:
             last_valid_frame = frame
             out_vid.write(frame)
+        
+        # Progress Log
+        if i % 100 == 0:
+            now = time.time()
+            if now - last_log_time > 5.0:
+                percent = (i / total_frames) * 100
+                print(f"{log_prefix}Repairing: {percent:.1f}% ({i}/{total_frames}). Repaired: {repaired_count}")
+                last_log_time = now
             
     cap.release()
     out_vid.release()
+    
+    # If fast_mode was ON and we found NO errors, we might have just re-encoded for nothing.
+    # But checking 'repaired_count' handles this. 
+    # However, we already overwrote the file. 
+    # If repaired_count == 0, the output is identical (but re-encoded) to input.
+    # Ideally, we should check this before committing, but we've already streamed it.
+    
+    if repaired_count == 0 and fast_mode:
+        print(f"{log_prefix}No corrupt frames found during read. Keeping re-encoded version.")
+        # Optimization: We could restore original if we trust it, but re-encoding ensures standard format.
+        # Let's keep it consistent.
     
     # Replace Video
     if tmp_video.exists():
@@ -177,7 +313,8 @@ def process_camera_worker(args):
             src_video.unlink() # Delete .orig
 
     # --- REPAIR DEPTH (Optional) ---
-    if has_depth:
+    if has_depth and bad_indices and process_depth:
+        print(f"{log_prefix}Repairing depth (Found {len(bad_indices)} bad frames)...")
         if backup_enabled:
             src_depth = cam_backup / depth_file.name
             if not src_depth.exists():
@@ -229,13 +366,13 @@ def process_camera_worker(args):
                     src_depth.unlink()
                     
         except Exception as e:
-            print(f"Error processing depth for {cam_dir.name}: {e}")
+            print(f"{log_prefix}Error processing depth: {e}")
             if tmp_depth.exists(): tmp_depth.unlink()
             # Restore original if something failed
             if not backup_enabled and src_depth.exists() and not depth_file.exists():
                 src_depth.rename(depth_file)
 
-    print(f"  [Done] {cam_dir.name} repaired.")
+    print(f"{log_prefix}Done. Repaired {repaired_count} frames.")
 
 def main():
     parser = argparse.ArgumentParser(description="Repair corrupt frames (In-Place, Keep Timeline)")
@@ -243,6 +380,11 @@ def main():
     parser.add_argument("--backup", action="store_true", help="Keep backups in _corrupt_backup folder")
     parser.add_argument("--workers", type=int, default=max(1, multiprocessing.cpu_count() // 2), 
                         help="Number of parallel workers")
+    parser.add_argument("--fast", action="store_true", 
+                        help="Fast mode: Skip ffmpeg scan, only repair frames that fail to read in OpenCV. Faster but less thorough.")
+    parser.add_argument("--depth", action="store_true", 
+                        help="Process depth as video frames (Default: False)")
+    
     args = parser.parse_args()
     
     session_dir = args.session_dir.resolve()
@@ -252,6 +394,8 @@ def main():
         
     print(f"=== Frame Repair Started: {session_dir.name} ===")
     print("Mode: REPLACE bad frames with PREVIOUS valid frame (Timestamp invariant)")
+    if args.fast:
+        print("Option: FAST mode enabled (Skipping ffmpeg scan)")
     
     # 1. Setup Backup Directory
     backup_dir = session_dir / "_corrupt_backup"
@@ -277,11 +421,16 @@ def main():
     print(f"Found {len(camera_dirs)} cameras. Processing...")
     
     # 3. Process in Parallel
-    pool_args = [(d, backup_dir, args.backup) for d in camera_dirs]
+    pool_args = [(d, backup_dir, args.backup, args.fast, args.depth) for d in camera_dirs]
     
-    with multiprocessing.Pool(processes=args.workers) as pool:
-        # Use tqdm to show progress bar
-        list(tqdm(pool.imap_unordered(process_camera_worker, pool_args), total=len(camera_dirs)))
+    # If only 1 worker or 1 camera, we can use simple loop for cleaner output
+    if args.workers == 1 or len(camera_dirs) == 1:
+        for p_arg in pool_args:
+            process_camera_worker(p_arg)
+    else:
+        with multiprocessing.Pool(processes=args.workers) as pool:
+            # Use tqdm to show total progress (files processed)
+            list(tqdm(pool.imap_unordered(process_camera_worker, pool_args), total=len(camera_dirs), unit="cam"))
 
     # 4. Cleanup
     if not args.backup and backup_dir.exists():

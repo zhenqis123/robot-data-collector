@@ -329,7 +329,7 @@ def count_csv_rows(csv_path: Path) -> int:
     return max(0, line_count - 1)
 
 
-def resolve_color_path(capture_root: Path, camera_id: str, color_rel: str) -> Path:
+def resolve_color_path(capt阅读, 理解并详细介绍这份代码的逻辑ure_root: Path, camera_id: str, color_rel: str) -> Path:
     p = Path(color_rel)
     if p.is_absolute():
         return p
