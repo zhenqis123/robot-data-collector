@@ -78,7 +78,7 @@ __pycache__/
 # 1. 忽略 third_party 文件夹下的所有内容
 third_party/*
 post_process/old_code
-
+post_process/sample.png
 
 # 2. 但是不要忽略 apriltag 目录
 !third_party/apriltag/
