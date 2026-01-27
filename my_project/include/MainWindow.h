@@ -72,6 +72,7 @@ private slots:
     void onModeChanged(int index);
     void onGenerateVlmTask();
     void onClearTacOffsets();
+    void onDeleteLastRecording();
 
 private:
     Logger _logger;
@@ -98,6 +99,12 @@ private:
     QPushButton *_abortButton{nullptr};
     QPushButton *_clearTacButton{nullptr};
     QPushButton *_keyframeButton{nullptr};
+    QPushButton *_deleteLastButton{nullptr};
+
+    // Tracking for "Delete Last Recording" feature
+    std::string _lastRecordingPath;
+    std::chrono::system_clock::time_point _lastRecordingTime;
+    bool _canDeleteLast{false};
     QComboBox *_modeSelect{nullptr};
     QPushButton *_applySettingsButton{nullptr};
     QLineEdit *_captureNameEdit{nullptr};

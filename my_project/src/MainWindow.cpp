@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <ctime>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -114,6 +115,12 @@ void MainWindow::setupUi()
     _controlPanel->setMinimumWidth(400);
     auto *controlsLayout = new QVBoxLayout(_controlPanel);
     controlsLayout->setSpacing(12);
+
+    _deleteLastButton = new QPushButton(tr("删除上一条记录 / Delete Last Recording"));
+    _deleteLastButton->setStyleSheet("background-color: #722; color: #fff; font-weight: bold; padding: 6px;");
+    _deleteLastButton->setEnabled(false); // Default disabled until we record something
+    controlsLayout->addWidget(_deleteLastButton);
+
     controlsLayout->addWidget(createMetadataGroup());
     controlsLayout->addWidget(createTaskSelectionGroup());
     controlsLayout->addWidget(createVlmGroup());
@@ -197,6 +204,10 @@ void MainWindow::updateControls()
 
     if (_keyframeButton)
         _keyframeButton->setEnabled(recording);
+
+    if (_deleteLastButton)
+        _deleteLastButton->setEnabled(_canDeleteLast && !recording);
+
     if (_vlmCameraSelect)
     {
         _vlmCameraSelect->clear();
@@ -348,6 +359,10 @@ void MainWindow::connectSignals()
     connect(_cameraSelect, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onCameraSelectionChanged);
     connect(_applySettingsButton, &QPushButton::clicked, this, &MainWindow::onApplyCameraSettings);
+
+    if (_deleteLastButton)
+        connect(_deleteLastButton, &QPushButton::clicked, this, &MainWindow::onDeleteLastRecording);
+
     connect(_sceneSelect, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onSceneSelectionChanged);
     connect(_taskSelect, QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -1659,6 +1674,77 @@ void MainWindow::onClearTacOffsets()
     }
 }
 
+void MainWindow::onDeleteLastRecording()
+{
+    if (!_canDeleteLast)
+    {
+        QMessageBox::warning(this, tr("无法删除 / Cannot Delete"),
+                             tr("没有可删除的记录，或者上次记录已被删除。\n"
+                                "No recording available to delete, or it has already been deleted."));
+        return;
+    }
+
+    if (_lastRecordingPath.empty() || !std::filesystem::exists(_lastRecordingPath))
+    {
+        QMessageBox::warning(this, tr("错误 / Error"),
+                             tr("找不到记录路径：%1\nRecording path not found: %1")
+                                 .arg(QString::fromStdString(_lastRecordingPath)));
+        _canDeleteLast = false;
+        updateControls();
+        return;
+    }
+
+    // Check date (only allow deleting today's data)
+    auto now = std::chrono::system_clock::now();
+    time_t lastT = std::chrono::system_clock::to_time_t(_lastRecordingTime);
+    time_t nowT = std::chrono::system_clock::to_time_t(now);
+    std::tm lastTm = *std::localtime(&lastT);
+    std::tm nowTm = *std::localtime(&nowT);
+    
+    bool sameDay = (lastTm.tm_year == nowTm.tm_year && 
+                    lastTm.tm_mon == nowTm.tm_mon && 
+                    lastTm.tm_mday == nowTm.tm_mday);
+
+    if (!sameDay)
+    {
+        QMessageBox::warning(this, tr("警告 / Warning"),
+                             tr("只能删除当天生成的记录。\n"
+                                "You can only delete recordings created today."));
+        _canDeleteLast = false; // Disable further attempts
+        updateControls();
+        return;
+    }
+
+    // Confirmation
+    QMessageBox::StandardButton reply;
+    reply = QMessageBox::question(this, tr("确认删除 / Confirm Delete"),
+                                  tr("确定要永久删除上一条记录吗？此操作不可逆！\n"
+                                     "Are you sure you want to permanently delete the last recording?\n\n"
+                                     "Path: %1").arg(QString::fromStdString(_lastRecordingPath)),
+                                  QMessageBox::Yes | QMessageBox::No);
+
+    if (reply == QMessageBox::Yes)
+    {
+        std::error_code ec;
+        std::uintmax_t count = std::filesystem::remove_all(_lastRecordingPath, ec);
+        if (!ec)
+        {
+            _logger.info("Deleted last recording: %s (%lu items)", _lastRecordingPath.c_str(), count);
+            QMessageBox::information(this, tr("删除成功 / Success"),
+                                     tr("上一条记录已成功删除。\nLast recording deleted successfully."));
+            _statusLabel->setText(tr("记录已删除 / Recording deleted"));
+            _canDeleteLast = false; 
+            updateControls();
+        }
+        else
+        {
+            _logger.error("Failed to delete %s: %s", _lastRecordingPath.c_str(), ec.message().c_str());
+            QMessageBox::critical(this, tr("删除失败 / Failed"),
+                                  tr("无法删除记录:\n%1").arg(QString::fromStdString(ec.message())));
+        }
+    }
+}
+
 void MainWindow::onStartRecording()
 {
     if (_capture)
@@ -1704,6 +1790,10 @@ void MainWindow::onStartRecording()
 
         auto info = gatherCaptureInfo();
         _capture->startRecording(info.name, info.subject, info.path, typesToRecord);
+        
+        // Reset delete capability when starting new recording
+        _canDeleteLast = false;
+        
         logAnnotation("start_recording");
         _statusLabel->setText(tr("录制中 / Recording..."));
         _audioPlayer.play("start", _currentTask->task.id, "", "", makeStartPromptText());
@@ -1723,6 +1813,12 @@ void MainWindow::onStopRecording()
             _taskMachine.abort();
         _taskMachine.stop();
         logAnnotation("stop_recording");
+
+        // Record the path and time for potential deletion
+        _lastRecordingPath = _storage.basePath();
+        _lastRecordingTime = std::chrono::system_clock::now();
+        _canDeleteLast = true;
+
         _capture->stopRecording();
         _statusLabel->setText(tr("录制已停止 / Recording stopped"));
         stopPromptVideo();
